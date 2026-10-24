@@ -177,4 +177,4 @@ it in the console. A lost private key is replaced the same way.
 
 ## Help
 
-Open an issue at `getpiston/tunnel-action`.
+Open an issue in this repository.
