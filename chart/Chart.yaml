@@ -5,7 +5,7 @@ description: >-
   this cluster's network that the connector's routing rules in the Piston
   console grant them, over a direct WireGuard tunnel per job.
 type: application
-# `version` is the chart release, set from the release tag when it is published;
+# `version` is the chart release, bumped in the pull request that releases it;
 # `appVersion` is the image the chart installs by default. The two are kept
 # equal whenever the image moves.
 version: 0.1.0
