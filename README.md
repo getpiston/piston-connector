@@ -42,6 +42,9 @@ helm install piston-connector oci://ghcr.io/getpiston/charts/piston-connector \
   --set connectorId=<connector id> --set existingSecret=piston-connector
 ```
 
+`--version` picks the chart release, and the chart's `appVersion` is the
+version of the connector image it installs.
+
 Or pass the key as `--set privateKey=…` and the chart writes the Secret
 itself. Local settings go in a values file when yours differ:
 

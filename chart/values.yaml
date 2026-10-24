@@ -1,0 +1,52 @@
+## What a job reaches is not set here: the routing rules on the connector's
+## page in the Piston console grant it, and the README says what a pod CIDR
+## or 0.0.0.0/0 in a rule exposes.
+
+## The connector's id, as the console's install line carries it: what the
+## connector names itself to Piston as, beside its key.
+connectorId: ""
+
+## The connector's private key, Curve25519, 32 bytes of base64: the one the
+## Piston console generated and showed once, or one `wg genkey` made. Set this
+## or existingSecret, never both.
+privateKey: ""
+## The name of a Secret of your own, in the release's namespace, holding the
+## private key under the key `privateKey`. Set this or privateKey, never both.
+existingSecret: ""
+
+dns:
+  ## The resolvers the connector asks. Empty is the pod's own.
+  nameservers: []
+
+## Each replica is an instance of the connector, and the console lists them
+## under Instances. A job's tunnel stays with the instance it was given, so an
+## instance that stops ends its jobs' tunnels.
+replicas: 2
+
+## The addresses inside the tunnel: the connector's, the runners' and the
+## names'. Change it only if it overlaps a network a job must reach.
+tunnelRange: 100.127.0.0/16
+
+## What the connector writes to standard output, one JSON object a line:
+## debug, info, warn or error. At info the lines are the audit and access log
+## the README lists; debug adds every DNS answer and control frame.
+logLevel: info
+
+image:
+  repository: ghcr.io/getpiston/piston-connector
+  ## Empty is the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 64Mi
+  ## Each live UDP flow holds about 138 KiB, so 1 GiB carries some 7,000 at once.
+  limits:
+    memory: 1Gi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
