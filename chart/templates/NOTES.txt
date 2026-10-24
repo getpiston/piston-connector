@@ -1,0 +1,6 @@
+{{ .Release.Name }} runs the Piston connector as {{ .Values.replicaCount }} instance{{ if ne (int .Values.replicaCount) 1 }}s{{ end }}. The network
+connector's page in the Piston console lists each under Instances once it connects.
+
+Read its log with:
+
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "piston-connector.fullname" . }}

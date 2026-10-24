@@ -39,19 +39,21 @@ Piston keeps only the public key.
 ```sh
 helm install piston-connector oci://ghcr.io/getpiston/charts/piston-connector \
   --version <version> --namespace piston-connector \
-  --set connectorId=<connector id> --set existingSecret=piston-connector
+  --set connectorConfigs.connectorId=<connector id> \
+  --set connectorConfigs.existingSecret=piston-connector
 ```
 
 `--version` picks the chart release, and the chart's `appVersion` is the
 version of the connector image it installs.
 
-Or pass the key as `--set privateKey=…` and the chart writes the Secret
-itself. Local settings go in a values file when yours differ:
+Or pass the key as `--set connectorConfigs.privateKey=…` and the chart writes
+the Secret itself. Local settings go in a values file when yours differ:
 
 ```yaml
-existingSecret: piston-connector
-dns:
-  nameservers: [10.20.0.2]  # the resolvers that know your internal names; default the pod's own
+connectorConfigs:
+  existingSecret: piston-connector
+  dns:
+    nameservers: [10.20.0.2]  # the resolvers that know your internal names; default the pod's own
 ```
 
 ### With `docker run`
@@ -66,23 +68,23 @@ docker run -d --name piston-connector --restart unless-stopped \
 
 ### Images
 
-Use the plain `<version>` tag. Each release also publishes
-`<version>-staging`, which exists for Piston's own verification.
+Each release is one image, tagged `<version>`.
 
 ## Settings
 
 | Value | Environment | Default | What it is |
 |---|---|---|---|
-| `connectorId` | `PISTON_CONNECTOR_ID` | | The connector's id, as the console's install lines carry it. Required |
-| `privateKey` | `PISTON_PRIVATE_KEY` | | The connector's private key. Set this or `existingSecret` |
-| `existingSecret` | | | A Secret in the release's namespace holding the private key under the key `privateKey` |
-| `dns.nameservers` | `PISTON_DNS_NAMESERVERS` | the pod's own | The resolvers the connector asks for the names jobs look up, `address` or `address:port`, comma separated in the environment |
-| `replicas` | | `2` | Each replica serves the connector on its own; the console lists them under Instances. Run two or more, so a restart never leaves the connector without one |
-| `tunnelRange` | `PISTON_TUNNEL_RANGE` | `100.127.0.0/16` | The address range the tunnel uses inside jobs; change it only if it overlaps a network a job must reach. IPv4, wider than a /20 |
-| `logLevel` | `PISTON_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`; see [Logs](#logs) |
+| `connectorConfigs.connectorId` | `PISTON_CONNECTOR_ID` | | The connector's id, as the console's install lines carry it. Required |
+| `connectorConfigs.privateKey` | `PISTON_PRIVATE_KEY` | | The connector's private key. Set this or `connectorConfigs.existingSecret` |
+| `connectorConfigs.existingSecret` | | | A Secret in the release's namespace holding the private key under the key `privateKey` |
+| `connectorConfigs.dns.nameservers` | `PISTON_DNS_NAMESERVERS` | the pod's own | The resolvers the connector asks for the names jobs look up, `address` or `address:port`, comma separated in the environment |
+| `connectorConfigs.tunnelRange` | `PISTON_TUNNEL_RANGE` | `100.127.0.0/16` | The address range the tunnel uses inside jobs; change it only if it overlaps a network a job must reach. IPv4, wider than a /20 |
+| `connectorConfigs.logLevel` | `PISTON_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`; see [Logs](#logs) |
+| `connectorConfigs.apiUrl` | `PISTON_API_URL` | Piston's production | The Piston control plane the connector talks to; set it only when Piston says so |
+| `replicaCount` | | `2` | Each replica serves the connector on its own; the console lists them under Instances. Run two or more, so a restart never leaves the connector without one |
 | `resources` | | 100m CPU and 64 MiB requested, 1 GiB limit | |
 | `image.repository`, `image.tag`, `image.pullPolicy` | | `ghcr.io/getpiston/piston-connector`, the chart's version | |
-| `nodeSelector`, `tolerations`, `affinity`, `podAnnotations` | | empty | The ordinary pod knobs |
+| `replicaCount`, `image.*`, `imagePullSecrets`, `serviceAccount.*`, `podAnnotations`, `podLabels`, `podSecurityContext`, `securityContext`, `resources`, `livenessProbe`, `readinessProbe`, `volumes`, `volumeMounts`, `nodeSelector`, `tolerations`, `affinity` | | as `values.yaml` sets them | The Kubernetes knobs, under the names `helm create` gives them |
 | | `PISTON_METRICS_LISTEN` | `:9090` | Where Prometheus metrics are served |
 
 The connector reads its settings once, at start, and reports every mistake
