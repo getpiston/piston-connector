@@ -1,0 +1,91 @@
+name: Release
+
+# A hand-cut `v<major>.<minor>.<patch>` tag publishes the chart at that version
+# to oci://ghcr.io/getpiston/charts/piston-connector; CI already gated the
+# tagged commit, so this guards only the registry.
+
+on:
+  push:
+    tags: ['v*']
+
+# Never cancelled: a publish stopped mid-push releases a chart nobody verified.
+concurrency:
+  group: piston-connector-chart
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  HELM_VERSION: v4.2.2
+  CHART_REPOSITORY: oci://ghcr.io/getpiston/charts
+
+jobs:
+  release:
+    name: release the chart
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Read the version from the tag
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::$GITHUB_REF_NAME is not v<major>.<minor>.<patch>"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure helm ${{ env.HELM_VERSION }}
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" \
+            | tar -xzO linux-amd64/helm > "$HOME/.local/bin/helm"
+          chmod +x "$HOME/.local/bin/helm"
+          "$HOME/.local/bin/helm" version
+
+      - name: Log helm in to GHCR
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: printf '%s' "$TOKEN" | helm registry login ghcr.io -u "$ACTOR" --password-stdin
+
+      - name: Refuse to overwrite a published chart
+        # Authenticated: anonymously a private package's 401 would read as absent.
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if helm show chart "$CHART_REPOSITORY/piston-connector" --version "$VERSION" >/dev/null 2>&1; then
+            echo "::error::chart $VERSION is already published; tag a new version."
+            exit 1
+          fi
+
+      - name: Copy the guide into the chart
+        run: cp README.md chart/README.md
+
+      - name: Package and push the chart
+        # No --app-version: Chart.yaml's appVersion is the image the chart installs.
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          helm package chart --version "$VERSION" -d "$RUNNER_TEMP/chart"
+          helm push "$RUNNER_TEMP/chart/piston-connector-$VERSION.tgz" "$CHART_REPOSITORY"
+
+      - name: Verify the chart is publicly pullable
+        # New GHCR packages are private; an empty credential store keeps the login above out.
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          anonymous="$(mktemp -d)"
+          if ! HELM_REGISTRY_CONFIG="$anonymous/registry.json" helm show chart \
+               "$CHART_REPOSITORY/piston-connector" --version "$VERSION" >/dev/null 2>&1; then
+            echo "::error::the chart is not anonymously pullable. Set the charts/piston-connector package to Public in GHCR."
+            exit 1
+          fi

@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HELM_VERSION: v4.2.2
+
+jobs:
+  chart:
+    name: Chart lint and render tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Ensure helm ${{ env.HELM_VERSION }}
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" \
+            | tar -xzO linux-amd64/helm > "$HOME/.local/bin/helm"
+          chmod +x "$HOME/.local/bin/helm"
+          "$HOME/.local/bin/helm" version
+
+      - name: Lint the chart
+        run: helm lint chart
+
+      # `helm lint` reports the chart's `fail` guards at INFO and exits 0; only
+      # `helm template`, which render.sh drives, enforces them.
+      - name: Render tests
+        run: chart/tests/render.sh
