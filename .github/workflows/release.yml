@@ -1,12 +1,19 @@
 name: Release
 
-# A hand-cut `v<major>.<minor>.<patch>` tag publishes the chart at that version
-# to oci://ghcr.io/getpiston/charts/piston-connector; CI already gated the
-# tagged commit, so this guards only the registry.
+# chart/Chart.yaml is the one source of the chart's version: a release is the
+# pull request that bumps `version`, and its merge to main publishes that version
+# to oci://ghcr.io/getpiston/charts/piston-connector. A dispatch publishes what
+# main's Chart.yaml names. A version is built once and never overwritten: one
+# already published ends the run green, so a Chart.yaml edit that bumps nothing
+# publishes nothing. CI already gated the commit, so this guards only the registry.
 
 on:
+  workflow_dispatch:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths:
+      - chart/Chart.yaml
+      - .github/workflows/release.yml
 
 # Never cancelled: a publish stopped mid-push releases a chart nobody verified.
 concurrency:
@@ -23,6 +30,8 @@ env:
 jobs:
   release:
     name: release the chart
+    # A dispatch from another branch publishes nothing: only main's Chart.yaml is released.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -32,14 +41,16 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Read the version from the tag
+      - name: Read the version from Chart.yaml
         id: version
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="$(yq '.version' chart/Chart.yaml)"
+          app_version="$(yq '.appVersion' chart/Chart.yaml)"
           if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::$GITHUB_REF_NAME is not v<major>.<minor>.<patch>"
+            echo "::error::Chart.yaml's version $version is not <major>.<minor>.<patch>"
             exit 1
           fi
+          echo "chart $version, image $app_version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Ensure helm ${{ env.HELM_VERSION }}
@@ -57,28 +68,34 @@ jobs:
           ACTOR: ${{ github.actor }}
         run: printf '%s' "$TOKEN" | helm registry login ghcr.io -u "$ACTOR" --password-stdin
 
-      - name: Refuse to overwrite a published chart
+      - name: Look for the version in the registry
+        id: published
         # Authenticated: anonymously a private package's 401 would read as absent.
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           if helm show chart "$CHART_REPOSITORY/piston-connector" --version "$VERSION" >/dev/null 2>&1; then
-            echo "::error::chart $VERSION is already published; tag a new version."
-            exit 1
+            echo "::notice::chart $VERSION is published already; bump version in chart/Chart.yaml to release."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Copy the guide into the chart
+        if: steps.published.outputs.exists == 'false'
         run: cp README.md chart/README.md
 
       - name: Package and push the chart
-        # No --app-version: Chart.yaml's appVersion is the image the chart installs.
+        if: steps.published.outputs.exists == 'false'
+        # No --version or --app-version: Chart.yaml names both.
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          helm package chart --version "$VERSION" -d "$RUNNER_TEMP/chart"
+          helm package chart -d "$RUNNER_TEMP/chart"
           helm push "$RUNNER_TEMP/chart/piston-connector-$VERSION.tgz" "$CHART_REPOSITORY"
 
       - name: Verify the chart is publicly pullable
+        if: steps.published.outputs.exists == 'false'
         # New GHCR packages are private; an empty credential store keeps the login above out.
         env:
           VERSION: ${{ steps.version.outputs.version }}
