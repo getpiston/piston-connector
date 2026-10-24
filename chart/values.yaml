@@ -2,41 +2,45 @@
 ## page in the Piston console grant it, and the README says what a pod CIDR
 ## or 0.0.0.0/0 in a rule exposes.
 
-## The connector's id, as the console's install line carries it: what the
-## connector names itself to Piston as, beside its key.
-connectorId: ""
-
-## The connector's private key, Curve25519, 32 bytes of base64: the one the
-## Piston console generated and showed once, or one `wg genkey` made. Set this
-## or existingSecret, never both.
-privateKey: ""
-## The name of a Secret of your own, in the release's namespace, holding the
-## private key under the key `privateKey`. Set this or privateKey, never both.
-existingSecret: ""
-
-dns:
-  ## The resolvers the connector asks. Empty is the pod's own.
-  nameservers: []
-
 ## Each replica is an instance of the connector, and the console lists them
 ## under Instances. A job's tunnel stays with the instance it was given, so an
 ## instance that stops ends its jobs' tunnels.
-replicas: 2
-
-## The addresses inside the tunnel: the connector's, the runners' and the
-## names'. Change it only if it overlaps a network a job must reach.
-tunnelRange: 100.127.0.0/16
-
-## What the connector writes to standard output, one JSON object a line:
-## debug, info, warn or error. At info the lines are the audit and access log
-## the README lists; debug adds every DNS answer and control frame.
-logLevel: info
+replicaCount: 2
 
 image:
   repository: ghcr.io/getpiston/piston-connector
+  pullPolicy: IfNotPresent
   ## Empty is the chart's appVersion.
   tag: ""
-  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  ## The connector never calls the Kubernetes API.
+  automount: false
+  annotations: {}
+  ## Empty is the release's full name.
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
 
 resources:
   requests:
@@ -46,7 +50,50 @@ resources:
   limits:
     memory: 1Gi
 
+livenessProbe:
+  httpGet:
+    path: /metrics
+    port: metrics
+readinessProbe:
+  httpGet:
+    path: /metrics
+    port: metrics
+
+volumes: []
+volumeMounts: []
+
 nodeSelector: {}
 tolerations: []
 affinity: {}
-podAnnotations: {}
+
+## The connector's own settings; the README's Settings table names the
+## environment variable each one becomes.
+connectorConfigs:
+  ## Required: the connector's id, as the console's install line carries it,
+  ## what the connector names itself to Piston as, beside its key.
+  connectorId: ""
+
+  ## The connector's private key, Curve25519, 32 bytes of base64: the one the
+  ## Piston console generated and showed once, or one `wg genkey` made. Set
+  ## this or existingSecret, never both.
+  privateKey: ""
+  ## The name of a Secret of your own, in the release's namespace, holding the
+  ## private key under the key `privateKey`. Set this or privateKey, never both.
+  existingSecret: ""
+
+  dns:
+    ## The resolvers the connector asks. Empty is the pod's own.
+    nameservers: []
+
+  ## The addresses inside the tunnel: the connector's, the runners' and the
+  ## names'. Change it only if it overlaps a network a job must reach.
+  tunnelRange: 100.127.0.0/16
+
+  ## What the connector writes to standard output, one JSON object a line:
+  ## debug, info, warn or error. At info the lines are the audit and access log
+  ## the README lists; debug adds every DNS answer and control frame.
+  logLevel: info
+
+  ## The Piston control plane the connector talks to. Empty is Piston's
+  ## production, which the image defaults to; set it only when Piston says so.
+  apiUrl: ""

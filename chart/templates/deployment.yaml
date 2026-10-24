@@ -1,40 +1,45 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "piston-connector.name" . }}
-  namespace: {{ .Release.Namespace }}
+  name: {{ include "piston-connector.fullname" . }}
   labels:
     {{- include "piston-connector.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.replicas }}
+  replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
       {{- include "piston-connector.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      labels:
-        {{- include "piston-connector.labels" . | nindent 8 }}
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9090"
         prometheus.io/path: /metrics
-        {{- if .Values.privateKey }}
+        {{- if .Values.connectorConfigs.privateKey }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
         {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+      labels:
+        {{- include "piston-connector.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "piston-connector.serviceAccountName" . }}
       # The connector never calls the Kubernetes API.
       automountServiceAccountToken: false
       enableServiceLinks: false
+      {{- with .Values.podSecurityContext }}
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 65532
-        runAsGroup: 65532
-        seccompProfile:
-          type: RuntimeDefault
-      {{- if gt (int .Values.replicas) 1 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if gt (int .Values.replicaCount) 1 }}
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
@@ -44,43 +49,64 @@ spec:
               {{- include "piston-connector.selectorLabels" . | nindent 14 }}
       {{- end }}
       containers:
-        - name: connector
-          image: "{{ .Values.image.repository }}:{{ include "piston-connector.tag" . }}"
+        - name: {{ .Chart.Name }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
             - name: PISTON_CONNECTOR_ID
-              value: {{ required "connectorId is the connector's id from the console's install line" .Values.connectorId | quote }}
+              value: {{ required "connectorConfigs.connectorId is the connector's id from the console's install line" .Values.connectorConfigs.connectorId | quote }}
             - name: PISTON_PRIVATE_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ include "piston-connector.secretName" . }}
                   key: privateKey
             - name: PISTON_DNS_NAMESERVERS
-              value: {{ join "," .Values.dns.nameservers | quote }}
+              value: {{ join "," .Values.connectorConfigs.dns.nameservers | quote }}
             - name: PISTON_TUNNEL_RANGE
-              value: {{ .Values.tunnelRange | quote }}
+              value: {{ .Values.connectorConfigs.tunnelRange | quote }}
             - name: PISTON_LOG_LEVEL
-              value: {{ .Values.logLevel | quote }}
+              value: {{ .Values.connectorConfigs.logLevel | quote }}
+            {{- with .Values.connectorConfigs.apiUrl }}
+            - name: PISTON_API_URL
+              value: {{ . | quote }}
+            {{- end }}
           ports:
             - name: metrics
               containerPort: 9090
               protocol: TCP
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.tolerations }}
-      tolerations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
       {{- with .Values.affinity }}
       affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
