@@ -42,6 +42,7 @@ securityContext:
     drop:
       - ALL
 
+## No CPU limit: a limit throttles the tunnels' bursts; add replicas for more throughput.
 resources:
   requests:
     cpu: 100m
