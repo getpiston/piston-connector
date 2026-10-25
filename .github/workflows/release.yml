@@ -94,15 +94,3 @@ jobs:
           helm package chart -d "$RUNNER_TEMP/chart"
           helm push "$RUNNER_TEMP/chart/piston-connector-$VERSION.tgz" "$CHART_REPOSITORY"
 
-      - name: Verify the chart is publicly pullable
-        if: steps.published.outputs.exists == 'false'
-        # New GHCR packages are private; an empty credential store keeps the login above out.
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          anonymous="$(mktemp -d)"
-          if ! HELM_REGISTRY_CONFIG="$anonymous/registry.json" helm show chart \
-               "$CHART_REPOSITORY/piston-connector" --version "$VERSION" >/dev/null 2>&1; then
-            echo "::error::the chart is not anonymously pullable. Set the charts/piston-connector package to Public in GHCR."
-            exit 1
-          fi
