@@ -64,6 +64,18 @@ readinessProbe:
 volumes: []
 volumeMounts: []
 
+## An optional fence below the routing rules: a NetworkPolicy holding the
+## connector's pods to these egress ranges whatever a rule grants. Each entry
+## allows its cidr minus its except ranges. Piston and its runners are on the
+## internet, so the ranges must still hold them; DNS to the cluster's kube-dns
+## is always allowed. Only a network plugin that enforces NetworkPolicy applies
+## it.
+networkPolicy:
+  enabled: false
+  egress:
+    - cidr: 0.0.0.0/0
+      except: []
+
 nodeSelector: {}
 tolerations: []
 affinity: {}

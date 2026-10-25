@@ -1,0 +1,40 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "piston-connector.fullname" . }}
+  labels:
+    {{- include "piston-connector.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "piston-connector.selectorLabels" . | nindent 6 }}
+  # Egress alone: the connector opens no port, and the metrics scrape stays as the cluster has it.
+  policyTypes:
+    - Egress
+  egress:
+    # The cluster's DNS, so the connector resolves Piston and the names jobs look up.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- with .Values.networkPolicy.egress }}
+    - to:
+        {{- range . }}
+        - ipBlock:
+            cidr: {{ .cidr }}
+            {{- with .except }}
+            except:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
+        {{- end }}
+    {{- end }}
+{{- end }}
