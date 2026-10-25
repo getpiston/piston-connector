@@ -50,7 +50,7 @@ next section, [Kubernetes with Helm](#kubernetes-with-helm), is the way.
    ```yaml
    jobs:
      migrate:
-       runs-on: <a Piston runner label>
+       runs-on: piston-4cpu-ubuntu-2402
        permissions:
          contents: read
          id-token: write
