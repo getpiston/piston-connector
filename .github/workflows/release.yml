@@ -24,7 +24,7 @@ permissions:
   contents: read
 
 env:
-  HELM_VERSION: v4.2.2
+  HELM_VERSION: v4.3.1
   CHART_REPOSITORY: oci://ghcr.io/getpiston/charts
 
 jobs:
