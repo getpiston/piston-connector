@@ -92,6 +92,16 @@ nokind "no Service"                               Service
 nokind "no Ingress"                               Ingress
 nokind "no HorizontalPodAutoscaler"               HorizontalPodAutoscaler
 
+# The optional NetworkPolicy: egress alone, kube-dns always, each range with its excepts.
+hasnt "no NetworkPolicy by default"               "kind: NetworkPolicy"
+has  "a NetworkPolicy when enabled"               "kind: NetworkPolicy" --set networkPolicy.enabled=true
+has  "it governs egress alone"                    "- Egress" --set networkPolicy.enabled=true
+hasnt "it leaves ingress alone"                   "- Ingress" --set networkPolicy.enabled=true
+has  "kube-dns stays reachable"                   "k8s-app: kube-dns" --set networkPolicy.enabled=true
+has  "every address by default"                   "cidr: 0.0.0.0/0" --set networkPolicy.enabled=true
+has  "an except is a range never reached"         "- 169.254.169.254/32" --set networkPolicy.enabled=true \
+     --set "networkPolicy.egress[0].cidr=0.0.0.0/0" --set "networkPolicy.egress[0].except[0]=169.254.169.254/32"
+
 # The ordinary pod knobs pass through.
 has  "podAnnotations pass through"                "example.com/team: data" --set "podAnnotations.example\.com/team=data"
 has  "nodeSelector passes through"                "kubernetes.io/arch: arm64" --set "nodeSelector.kubernetes\.io/arch=arm64"

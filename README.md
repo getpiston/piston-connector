@@ -159,6 +159,7 @@ two minutes, so a job in the middle of a transfer may see one fail.
 | `connectorConfigs.logLevel` | `PISTON_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`; see [Logs](#logs) |
 | `connectorConfigs.apiUrl` | `PISTON_API_URL` | Piston's production | The Piston address the connector connects to; set it only when Piston asks you to |
 | | `PISTON_METRICS_LISTEN` | `:9090` | Where the [metrics](#metrics) are served |
+| `networkPolicy.enabled`, `networkPolicy.egress` | | off; `0.0.0.0/0` with no except | An optional NetworkPolicy on the connector's pods; see [A network policy below the rules](#a-network-policy-below-the-rules) |
 | `replicaCount`, `image.*`, `imagePullSecrets`, `serviceAccount.*`, `podAnnotations`, `podLabels`, `podSecurityContext`, `securityContext`, `resources`, `livenessProbe`, `readinessProbe`, `volumes`, `volumeMounts`, `nodeSelector`, `tolerations`, `affinity` | | as `values.yaml` sets them: 2 replicas; the image `ghcr.io/getpiston/piston-connector` at the chart's `appVersion`; 100m CPU and 64 MiB requested, a 1 GiB memory limit | The usual Kubernetes settings, under the names `helm create` gives them |
 
 The connector reads its settings once, at start, and reports every mistake in
@@ -168,10 +169,13 @@ them at once.
 
 - **Outbound connections only**: HTTPS to Piston, and UDP to Piston's runners,
   which carries the encrypted tunnels. It needs no inbound port, no volume and
-  no extra Linux capability.
+  no extra Linux capability. The chart runs it as a non-root user with every
+  capability dropped, no privilege escalation, a read-only root filesystem and
+  the `RuntimeDefault` seccomp profile, which meets Kubernetes' restricted Pod
+  Security Standard.
 - **A path to what your routing rules grant.** A job can reach at most what
-  the connector's container can reach, and your own firewall or Kubernetes
-  network policy can narrow that further.
+  the connector's container can reach, and your own firewall or the chart's
+  [network policy](#a-network-policy-below-the-rules) can narrow that further.
 - **Two or more replicas.** A job's tunnel stays on one replica. When that
   replica stops, its tunnels' open connections are cut, and Piston moves them to
   a replica still running within two minutes. Two or more, the chart's default,
@@ -179,6 +183,31 @@ them at once.
 - **No CPU limit.** The connector moves data in bursts, and a CPU limit
   throttles them, slowing every job's transfers. Keep the chart's small request
   and no limit, and add replicas for more throughput.
+
+### A network policy below the rules
+
+Routing rules decide what each job reaches. To be sure the connector never
+reaches some ranges whatever a rule says, a mistaken rule included, turn on
+the chart's NetworkPolicy and list them under `except`:
+
+```yaml
+networkPolicy:
+  enabled: true
+  egress:
+    - cidr: 0.0.0.0/0
+      except:
+        - 169.254.169.254/32  # the cloud metadata service
+        - 10.20.64.0/18       # a subnet no job may reach
+```
+
+Each entry allows the connector's pods to reach its `cidr`, minus its `except`
+ranges, and nothing else; DNS to the cluster's `kube-dns` is always allowed. A
+job that tries a refused address sees its connection fail, as when no rule
+grants it. Keep Piston and its runners, on the internet, inside an allowed
+range, and the DNS servers of `connectorConfigs.dns.nameservers` too when you
+set them. The policy works only where the cluster's network plugin enforces
+NetworkPolicy, as Calico, Cilium and the Amazon VPC CNI with network policy
+turned on do; elsewhere Kubernetes accepts it and nothing applies it.
 
 ## Routing rules
 
