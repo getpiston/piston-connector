@@ -141,9 +141,9 @@ helm upgrade piston-connector oci://ghcr.io/getpiston/charts/piston-connector \
 
 This moves to the newest chart, and so to its connector image, and keeps the
 settings you installed with; with a values file, pass `-f values.yaml` in
-place of `--reuse-values`. A replica that is replaced hands its jobs'
-tunnels to a replica still running within about a minute; the connections open
-at that moment are cut, so a job in the middle of a transfer may see one fail.
+place of `--reuse-values`. A replica that is replaced cuts its jobs' open
+connections, and Piston moves their tunnels to a replica still running within
+two minutes, so a job in the middle of a transfer may see one fail.
 
 ## Settings
 
@@ -171,9 +171,9 @@ them at once.
   the connector's container can reach, and your own firewall or Kubernetes
   network policy can narrow that further.
 - **Two or more replicas.** A job's tunnel stays on one replica. When that
-  replica stops, its tunnels move to one still running within about a minute,
-  and their open connections are cut. Two or more, the chart's default, mean a
-  restart never leaves the connector without one.
+  replica stops, its tunnels' open connections are cut, and Piston moves them to
+  a replica still running within two minutes. Two or more, the chart's default,
+  mean a restart never leaves the connector without one.
 - **No CPU limit.** The connector moves data in bursts, and a CPU limit
   throttles them, slowing every job's transfers. Keep the chart's small request
   and no limit, and add replicas for more throughput.
@@ -224,7 +224,7 @@ are an audit log of what every job did through the tunnel. Each has an
 
 | `event` | Written when | Its own fields |
 |---|---|---|
-| `connector_started`, `connector_stopped` | the connector starts, or stops; with `error` when it stopped on one | `instance_id`, as the console's Instances list shows it; `error` |
+| `connector_started`, `connector_stopped` | the connector starts, or stops on a signal or an error | `instance_id`, as the console's Instances list shows it; `error` |
 | `control_connected`, `control_closed` | its connection to Piston comes up or drops; it reconnects on its own | `error`, `retry_in` |
 | `control_unauthorized` | Piston no longer accepts this connector: it was deleted in the console, or recreated with another key; every job's tunnel on it ends | `error`, `retry_in` |
 | `tunnel_opened`, `tunnel_established`, `tunnel_closed` | a job is assigned to this connector, its tunnel comes up, and it ends | `runner_public_key`, `runner_endpoint`, `reach`; `reason` and `connections` on the close |
