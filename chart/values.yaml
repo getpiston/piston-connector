@@ -3,8 +3,8 @@
 ## or 0.0.0.0/0 in a rule exposes.
 
 ## Each replica is an instance of the connector, and the console lists them
-## under Instances. A job's tunnel stays with the instance it was given, so an
-## instance that stops ends its jobs' tunnels.
+## under Instances. A job's tunnel stays with one instance; when that instance
+## stops, Piston moves the tunnel to one still running.
 replicaCount: 2
 
 image:
@@ -42,7 +42,8 @@ securityContext:
     drop:
       - ALL
 
-## No CPU limit: a limit throttles the tunnels' bursts; add replicas for more throughput.
+## No CPU limit: a limit throttles the tunnels' bursts; add replicas for more
+## throughput.
 resources:
   requests:
     cpu: 100m
