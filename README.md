@@ -141,8 +141,9 @@ helm upgrade piston-connector oci://ghcr.io/getpiston/charts/piston-connector \
 
 This moves to the newest chart, and so to its connector image, and keeps the
 settings you installed with; with a values file, pass `-f values.yaml` in
-place of `--reuse-values`. A replica that is replaced ends the tunnels it
-holds, so upgrade when no job depends on one.
+place of `--reuse-values`. A replica that is replaced hands its jobs'
+tunnels to a replica still running within about a minute; the connections open
+at that moment are cut, so a job in the middle of a transfer may see one fail.
 
 ## Settings
 
@@ -169,10 +170,13 @@ them at once.
 - **A path to what your routing rules grant.** A job can reach at most what
   the connector's container can reach, and your own firewall or Kubernetes
   network policy can narrow that further.
-- **Two or more replicas.** A job's tunnel stays on the replica that opened
-  it: a replica that stops ends its jobs' tunnels, and new jobs go to the
-  replicas still running. Two or more, the chart's default, mean a restart
-  never leaves the connector without one.
+- **Two or more replicas.** A job's tunnel stays on one replica. When that
+  replica stops, its tunnels move to one still running within about a minute,
+  and their open connections are cut. Two or more, the chart's default, mean a
+  restart never leaves the connector without one.
+- **No CPU limit.** The connector moves data in bursts, and a CPU limit
+  throttles them, slowing every job's transfers. Keep the chart's small request
+  and no limit, and add replicas for more throughput.
 
 ## Routing rules
 
@@ -199,9 +203,8 @@ sends through the tunnel is refused.
 | Route by hostname | `postgres.data.svc.cluster.local`, your Postgres Service; `*.kafka.internal` | those hosts, by name: an exact name, or `*.x` for `x` and every name under it. The connector looks the name up in your network, so the job needs no matching network |
 | DNS domains | `corp.example.com` | the names under the domain, looked up through the connector as your DNS servers answer them. The job reaches their addresses only where they fall inside its Networks. `.` is every lookup |
 
-**Grant the narrowest resources a job needs.** A new rule starts as
-`0.0.0.0/0` and `.`, every address and every lookup, so narrow it before you
-save it. `0.0.0.0/0` opens everything the connector's container can reach: the
+**Grant the narrowest resources a job needs.** A new rule starts empty.
+`0.0.0.0/0` opens everything the connector's container can reach: the
 internet through your network, the cloud metadata service and with it the
 node's cloud credentials unless your cluster blocks it, the Kubernetes API, and
 the nodes. A range that holds your pods' addresses opens every pod in it.
@@ -221,7 +224,7 @@ are an audit log of what every job did through the tunnel. Each has an
 
 | `event` | Written when | Its own fields |
 |---|---|---|
-| `connector_started`, `connector_stopped` | the connector starts, or exits on an error | `instance_id`, as the console's Instances list shows it; `error` |
+| `connector_started`, `connector_stopped` | the connector starts, or stops; with `error` when it stopped on one | `instance_id`, as the console's Instances list shows it; `error` |
 | `control_connected`, `control_closed` | its connection to Piston comes up or drops; it reconnects on its own | `error`, `retry_in` |
 | `control_unauthorized` | Piston no longer accepts this connector: it was deleted in the console, or recreated with another key; every job's tunnel on it ends | `error`, `retry_in` |
 | `tunnel_opened`, `tunnel_established`, `tunnel_closed` | a job is assigned to this connector, its tunnel comes up, and it ends | `runner_public_key`, `runner_endpoint`, `reach`; `reason` and `connections` on the close |
@@ -239,7 +242,8 @@ Piston's, `run_completed` (the run finished), `cap` (the tunnel reached its
 6-hour limit), `connector_deleted` or `closed` (Piston no longer lists the
 tunnel), or one of the connector's own: `handshake_timeout` (it could not
 reach the job), `silent` (the job stopped answering), `address_reused` (a
-newer tunnel took its address) or `unauthorized`.
+newer tunnel took its address), `shutdown` (the connector was stopped) or
+`unauthorized`.
 
 At `debug` the connector adds detail for troubleshooting with Piston support.
 
