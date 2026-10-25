@@ -8,8 +8,8 @@ type: application
 # `version` is the chart release, bumped in the pull request that releases it;
 # `appVersion` is the image the chart installs by default. The two are kept
 # equal whenever the image moves.
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.1.1
+appVersion: "0.1.1"
 
 # The chart's repository; helm carries sources as the OCI source annotation,
 # which links the package to it.

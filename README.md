@@ -224,9 +224,8 @@ are an audit log of what every job did through the tunnel. Each has an
 | `connector_started`, `connector_stopped` | the connector starts, or exits on an error | `instance_id`, as the console's Instances list shows it; `error` |
 | `control_connected`, `control_closed` | its connection to Piston comes up or drops; it reconnects on its own | `error`, `retry_in` |
 | `control_unauthorized` | Piston no longer accepts this connector: it was deleted in the console, or recreated with another key; every job's tunnel on it ends | `error`, `retry_in` |
-| `tunnels_replayed` | after a reconnect, Piston has resent the tunnels this connector serves | `tunnels` |
 | `tunnel_opened`, `tunnel_established`, `tunnel_closed` | a job is assigned to this connector, its tunnel comes up, and it ends | `runner_public_key`, `runner_endpoint`, `reach`; `reason` and `connections` on the close |
-| `tunnel_reach_changed` | a routing-rule edit reaches a running job | `reach` |
+| `tunnel_reach_changed` | Piston sent a job's tunnel again under different routing rules | `reach` |
 | `connection_opened`, `connection_closed` | a connection from the job to a destination, and its end | `connection_id`, `protocol`, `source`, `destination`, `verdict`, `dialed`; `duration_ms`, `bytes_to_destination` and `bytes_to_runner` on the close |
 | `connection_denied`, `connection_failed` | a connection the rules do not grant, or one the destination did not answer | the same, `verdict`; `error` |
 | `lookup_allowed`, `lookup_forwarded`, `lookup_denied`, `lookup_failed` | a name the job looked up: granted by a rule, passed to your DNS servers unchanged, refused, or unanswered | `name`, `type`, `answer` |
@@ -237,11 +236,10 @@ address with its port; `dialed` is the address the connector reached;
 or `allow_ip` for what a rule granted, `deny`, `unresolved` when the hostname
 did not resolve, or `dial_failed`. A `tunnel_closed` line's `reason` is one of
 Piston's, `run_completed` (the run finished), `cap` (the tunnel reached its
-6-hour limit) or `connector_deleted`, or one of the connector's own:
-`handshake_timeout` (it could not reach the job), `silent` (the job stopped
-answering), `not_replayed` (Piston no longer listed the tunnel after a
-reconnect), `address_reused` (a newer tunnel took its address) or
-`unauthorized`.
+6-hour limit), `connector_deleted` or `closed` (Piston no longer lists the
+tunnel), or one of the connector's own: `handshake_timeout` (it could not
+reach the job), `silent` (the job stopped answering), `address_reused` (a
+newer tunnel took its address) or `unauthorized`.
 
 At `debug` the connector adds detail for troubleshooting with Piston support.
 
