@@ -39,9 +39,9 @@ next section, [Kubernetes with Helm](#kubernetes-with-helm), is the way.
    `docker logs piston-connector` says why (see [Logs](#logs)).
 
 4. **Write a routing rule.** On the connector's **Routing rules** tab, add a
-   rule: its **Job conditions** say which jobs may connect, its **Resources**
-   what they reach. For example, jobs of `acme-inc/api` reach the hostname
-   `db.internal`. A connector with no routing rule admits no job. See
+   rule: its **Name**, unique on the connector, its **Job conditions**, which
+   jobs may connect, and its **Resources**, what they reach. For example, a
+   rule `api-db` lets jobs of `acme-inc/api` reach the hostname `db.internal`. A connector with no routing rule admits no job. See
    [Routing rules](#routing-rules).
 
 5. **Open the tunnel from a job.** Add the `getpiston/tunnel-action` step,
@@ -65,7 +65,9 @@ next section, [Kubernetes with Helm](#kubernetes-with-helm), is the way.
    the identity GitHub gives it for that run, which is what `id-token: write`
    allows. So there is no VPN for you to operate and no long-lived secret for
    the job to hold. After the step, the job reaches what the routing rules
-   grant it, by name or by address.
+   grant it, by name or by address; the step prints each rule that admitted
+   the job, by its name, with the networks, hostnames and DNS domains it
+   grants.
 
 ## Kubernetes with Helm
 
@@ -181,9 +183,9 @@ them at once.
 ## Routing rules
 
 What a job reaches is written in the Piston console, not here. A network
-connector's routing rules are on its **Routing rules** tab, and each says two
-things: **Job conditions**, which jobs the rule admits, and **Resources**, what
-those jobs reach. Every condition you fill in must match the job, and a list
+connector's routing rules are on its **Routing rules** tab. Each has a name,
+unique on the connector, and says two things: **Job conditions**, which jobs
+the rule admits, and **Resources**, what those jobs reach. Every condition you fill in must match the job, and a list
 left empty matches any; `*` matches any text, and case does not matter.
 
 A job may connect when any rule's job conditions match it, and it reaches the
