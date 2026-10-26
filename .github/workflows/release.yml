@@ -81,9 +81,9 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Copy the guide into the chart
+      - name: Copy the guide and the license into the chart
         if: steps.published.outputs.exists == 'false'
-        run: cp README.md chart/README.md
+        run: cp README.md LICENSE chart/
 
       - name: Package and push the chart
         if: steps.published.outputs.exists == 'false'
