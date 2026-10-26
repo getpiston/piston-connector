@@ -69,7 +69,7 @@ volumeMounts: []
 ## allows its cidr minus its except ranges. Piston and its runners are on the
 ## internet, so the ranges must still hold them; DNS to the cluster's kube-dns
 ## is always allowed. Only a network plugin that enforces NetworkPolicy applies
-## it.
+## it, and some never match in-cluster pods to a range: see the README.
 networkPolicy:
   enabled: false
   egress:

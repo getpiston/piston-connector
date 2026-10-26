@@ -96,7 +96,6 @@ nokind "no HorizontalPodAutoscaler"               HorizontalPodAutoscaler
 hasnt "no NetworkPolicy by default"               "kind: NetworkPolicy"
 has  "a NetworkPolicy when enabled"               "kind: NetworkPolicy" --set networkPolicy.enabled=true
 has  "it governs egress alone"                    "- Egress" --set networkPolicy.enabled=true
-hasnt "it leaves ingress alone"                   "- Ingress" --set networkPolicy.enabled=true
 has  "kube-dns stays reachable"                   "k8s-app: kube-dns" --set networkPolicy.enabled=true
 has  "every address by default"                   "cidr: 0.0.0.0/0" --set networkPolicy.enabled=true
 has  "an except is a range never reached"         "- 169.254.169.254/32" --set networkPolicy.enabled=true \

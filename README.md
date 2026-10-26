@@ -207,7 +207,10 @@ grants it. Keep Piston and its runners, on the internet, inside an allowed
 range, and the DNS servers of `connectorConfigs.dns.nameservers` too when you
 set them. The policy works only where the cluster's network plugin enforces
 NetworkPolicy, as Calico, Cilium and the Amazon VPC CNI with network policy
-turned on do; elsewhere Kubernetes accepts it and nothing applies it.
+turned on do; elsewhere Kubernetes accepts it and nothing applies it. The
+ranges cover destinations outside the cluster: Cilium and GKE Dataplane V2
+never match a pod, a node or a Service to a range, so there a connector whose
+rules grant in-cluster names cannot reach them with the policy on.
 
 ## Routing rules
 
