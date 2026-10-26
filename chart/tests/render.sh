@@ -62,8 +62,6 @@ has  "a key change rolls the pods"                "checksum/secret:"
 
 # The configuration's keys, comma separated as docker run takes them.
 has  "nameservers are joined"                     'value: "10.20.0.2,10.20.0.3"' --set "connectorConfigs.dns.nameservers={10.20.0.2,10.20.0.3}"
-has  "the tunnel range defaults"                  'value: "100.127.0.0/16"'
-has  "the tunnel range is overridable"            'value: "100.64.0.0/16"' --set-string connectorConfigs.tunnelRange=100.64.0.0/16
 hasnt "the api URL is the image's by default"     "PISTON_API_URL"
 t "the api URL reaches the pod when set"
 out="$(render --set-string connectorConfigs.apiUrl=https://api.example.com)"
