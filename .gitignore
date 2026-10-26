@@ -1,2 +1,3 @@
-# The release copies README.md here when it packages the chart.
+# The release copies README.md and LICENSE here when it packages the chart.
 chart/README.md
+chart/LICENSE
