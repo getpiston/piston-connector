@@ -99,10 +99,6 @@ connectorConfigs:
     ## The resolvers the connector asks. Empty is the pod's own.
     nameservers: []
 
-  ## The addresses inside the tunnel: the connector's, the runners' and the
-  ## names'. Change it only if it overlaps a network a job must reach.
-  tunnelRange: 100.127.0.0/16
-
   ## What the connector writes to standard output, one JSON object a line:
   ## debug, info, warn or error. At info the lines are the audit and access log
   ## the README lists; debug adds every DNS answer and control frame.

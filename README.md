@@ -30,7 +30,7 @@ next section, [Kubernetes with Helm](#kubernetes-with-helm), is the way.
      'ghcr.io/getpiston/piston-connector:<version>'
    ```
 
-   Put in the version you want, such as `0.1.0`: each release is one image,
+   Put in the version you want, such as `1.0.0`: each release is one image,
    tagged with its version. The flags give the container a read-only
    filesystem and no Linux privileges, and it needs none.
 
@@ -155,7 +155,6 @@ two minutes, so a job in the middle of a transfer may see one fail.
 | `connectorConfigs.privateKey` | `PISTON_PRIVATE_KEY` | | Required. The connector's private key; with Helm, this or `connectorConfigs.existingSecret` |
 | `connectorConfigs.existingSecret` | | | The name of a Secret of yours, in the release's namespace, holding the private key under the key `privateKey` |
 | `connectorConfigs.dns.nameservers` | `PISTON_DNS_NAMESERVERS` | the container's own | The DNS servers the connector asks for the names jobs look up, as `address` or `address:port`: a list in Helm, comma separated in the environment |
-| `connectorConfigs.tunnelRange` | `PISTON_TUNNEL_RANGE` | `100.127.0.0/16` | The private addresses the tunnel uses inside jobs. Change it only if it overlaps a network a job must reach. IPv4, a `/19` or wider |
 | `connectorConfigs.logLevel` | `PISTON_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`; see [Logs](#logs) |
 | `connectorConfigs.apiUrl` | `PISTON_API_URL` | Piston's production | The Piston address the connector connects to; set it only when Piston asks you to |
 | | `PISTON_METRICS_LISTEN` | `:9090` | Where the [metrics](#metrics) are served |
@@ -164,6 +163,11 @@ two minutes, so a job in the middle of a transfer may see one fail.
 
 The connector reads its settings once, at start, and reports every mistake in
 them at once.
+
+The private addresses the tunnel uses inside jobs, `100.127.0.0/16` unless you
+change them, are set in the Piston console: **Tunnel addresses**, in the
+network connector's **Settings**. Change them only if they overlap a network a
+job must reach; a change restarts every replica on the new addresses.
 
 ## What the connector needs from your network
 
@@ -179,7 +183,9 @@ them at once.
 - **Two or more replicas.** A job's tunnel stays on one replica. When that
   replica stops, its tunnels' open connections are cut, and Piston moves them to
   a replica still running within two minutes. Two or more, the chart's default,
-  mean a restart never leaves the connector without one.
+  mean a restart never leaves the connector without one. Each replica holds at
+  most 100 jobs' tunnels at once; when every replica holds 100, Piston refuses
+  a new job's tunnel, so add replicas for more.
 - **No CPU limit.** The connector moves data in bursts, and a CPU limit
   throttles them, slowing every job's transfers. Keep the chart's small request
   and no limit, and add replicas for more throughput.
@@ -260,6 +266,7 @@ are an audit log of what every job did through the tunnel. Each has an
 |---|---|---|
 | `connector_started`, `connector_stopped` | the connector starts, or stops on a signal or an error | `instance_id`, as the console's Instances list shows it; `error` |
 | `control_connected`, `control_closed` | its connection to Piston comes up or drops; it reconnects on its own | `error`, `retry_in` |
+| `connector_configured` | the connector takes its tunnel addresses from Piston, at its first connection | `tunnel_range` |
 | `control_unauthorized` | Piston no longer accepts this connector: it was deleted in the console, or recreated with another key; every job's tunnel on it ends | `error`, `retry_in` |
 | `tunnel_opened`, `tunnel_established`, `tunnel_closed` | a job is assigned to this connector, its tunnel comes up, and it ends | `runner_public_key`, `runner_endpoint`, `reach`; `reason` and `connections` on the close |
 | `tunnel_reach_changed` | Piston sent a job's tunnel again under different routing rules | `reach` |
@@ -291,7 +298,7 @@ annotation scrapes them.
 |---|---|
 | `piston_connector_control_connected` | 1 while the connection to Piston is up |
 | `piston_connector_tunnels_open` | tunnels this replica holds, one a job |
-| `piston_connector_tunnels_up` | of those, the ones that are up |
+| `piston_connector_tunnels_established` | of those, the ones the job's side has answered |
 | `piston_connector_flows_total{protocol, verdict}` | connections from jobs, by verdict |
 | `piston_connector_dns_answers_total{kind}` | lookups, by answer |
 
