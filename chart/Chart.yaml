@@ -6,8 +6,7 @@ description: >-
   console grant them, over a direct WireGuard tunnel per job.
 type: application
 # `version` is the chart release, bumped in the pull request that releases it;
-# `appVersion` is the image the chart installs by default. The two are kept
-# equal whenever the image moves.
+# `appVersion` is the image the chart installs by default.
 version: 0.1.4
 appVersion: "0.1.3"
 
