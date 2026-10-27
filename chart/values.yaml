@@ -66,8 +66,8 @@ volumeMounts: []
 
 ## An optional fence below the routing rules: a NetworkPolicy holding the
 ## connector's pods to these egress ranges whatever a rule grants. Each entry
-## allows its cidr minus its except ranges. Piston and its runners are on the
-## internet, so the ranges must still hold them; DNS to the cluster's kube-dns
+## allows its cidr minus its except ranges. Piston and the tunnels' UDP are on
+## the internet, so the ranges must still hold it; DNS to the cluster's kube-dns
 ## is always allowed. Only a network plugin that enforces NetworkPolicy applies
 ## it, and some never match in-cluster pods to a range: see the README.
 networkPolicy:
@@ -94,10 +94,6 @@ connectorConfigs:
   ## The name of a Secret of your own, in the release's namespace, holding the
   ## private key under the key `privateKey`. Set this or privateKey, never both.
   existingSecret: ""
-
-  dns:
-    ## The resolvers the connector asks. Empty is the pod's own.
-    nameservers: []
 
   ## What the connector writes to standard output, one JSON object a line:
   ## debug, info, warn or error. At info the lines are the audit and access log

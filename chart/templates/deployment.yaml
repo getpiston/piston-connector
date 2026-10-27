@@ -64,8 +64,6 @@ spec:
                 secretKeyRef:
                   name: {{ include "piston-connector.secretName" . }}
                   key: privateKey
-            - name: PISTON_DNS_NAMESERVERS
-              value: {{ join "," .Values.connectorConfigs.dns.nameservers | quote }}
             - name: PISTON_LOG_LEVEL
               value: {{ .Values.connectorConfigs.logLevel | quote }}
             {{- with .Values.connectorConfigs.apiUrl }}
