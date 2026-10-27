@@ -58,7 +58,7 @@ next section, [Kubernetes with Helm](#kubernetes-with-helm), is the way.
          contents: read
          id-token: write
        steps:
-         - uses: getpiston/tunnel-action@v1
+         - uses: getpiston/tunnel-action@v2
            with:
              connector_name: <the network connector's name>
          - run: psql "postgres://app@db.internal:5432/app" -c 'select 1'
