@@ -60,8 +60,7 @@ fails "neither privateKey nor existingSecret fails"
 fails "both privateKey and existingSecret fail"   --set-string "connectorConfigs.privateKey=$PRIVATE_KEY" --set-string connectorConfigs.existingSecret=customer-owned
 has  "a key change rolls the pods"                "checksum/secret:"
 
-# The configuration's keys, comma separated as docker run takes them.
-has  "nameservers are joined"                     'value: "10.20.0.2,10.20.0.3"' --set "connectorConfigs.dns.nameservers={10.20.0.2,10.20.0.3}"
+# The configuration's keys.
 hasnt "the api URL is the image's by default"     "PISTON_API_URL"
 t "the api URL reaches the pod when set"
 out="$(render --set-string connectorConfigs.apiUrl=https://api.example.com)"

@@ -3,12 +3,12 @@ name: piston-connector
 description: >-
   The Piston connector: lets jobs on Piston runners reach the services of
   this cluster's network that the connector's routing rules in the Piston
-  console grant them, over a direct WireGuard tunnel per job.
+  console grant them, over an encrypted tunnel per job.
 type: application
 # `version` is the chart release, bumped in the pull request that releases it;
 # `appVersion` is the image the chart installs by default.
-version: 1.0.0
-appVersion: "1.0.0"
+version: 1.1.0
+appVersion: "1.1.0"
 
 # The chart's repository; helm carries sources as the OCI source annotation,
 # which links the package to it.

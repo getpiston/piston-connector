@@ -41,11 +41,13 @@ next section, [Kubernetes with Helm](#kubernetes-with-helm), is the way.
    `docker logs piston-connector` says why (see
    [Troubleshooting](#troubleshooting)).
 
-4. **Write a routing rule.** On the connector's **Routing rules** tab, add a
-   rule: its **Name**, unique on the connector, its **Job conditions**, which
-   jobs may connect, and its **Resources**, what they reach. For example, a
-   rule `api-db` lets jobs of `acme-inc/api` reach the hostname `db.internal`. A connector with no routing rule admits no job. See
-   [Routing rules](#routing-rules).
+4. **Write a routing rule.** On the connector's **Settings** tab, add a
+   routing rule: its **Name**, unique on the connector, its **Job matchers**,
+   which jobs may connect, and its **Authorized resources**, what they reach.
+   For example, a rule `api-db` lets jobs of `acme-inc/api` reach the hostname
+   `db.internal`. A connector with no routing rule admits no job. Above them,
+   **Configure Nameservers** says which of your DNS servers answer which
+   domains. See [Routing rules](#routing-rules) and [Nameservers](#nameservers).
 
 5. **Open the tunnel from a job.** Add the `getpiston/tunnel-action` step,
    with the connector's name, before the steps that need your network:
@@ -69,7 +71,7 @@ next section, [Kubernetes with Helm](#kubernetes-with-helm), is the way.
    allows. So there is no VPN for you to operate and no long-lived secret for
    the job to hold. After the step, the job reaches what the routing rules
    grant it, by name or by address; the step prints each rule that admitted
-   the job, by its name, with the networks, hostnames and DNS domains it
+   the job, by its name, with the network CIDRs and hostname matchers it
    grants.
 
 ## Kubernetes with Helm
@@ -129,8 +131,6 @@ replicaCount: 3
 connectorConfigs:
   connectorId: <connector id>
   existingSecret: piston-connector
-  dns:
-    nameservers: [10.20.0.2]  # the DNS servers that know your internal names
 ```
 
 ```sh
@@ -163,7 +163,6 @@ than the newest with **Update Required** and the newest version.
 | `connectorConfigs.connectorId` | `PISTON_CONNECTOR_ID` | | Required. The connector's id, as the console's install lines carry it |
 | `connectorConfigs.privateKey` | `PISTON_PRIVATE_KEY` | | Required. The connector's private key; with Helm, this or `connectorConfigs.existingSecret` |
 | `connectorConfigs.existingSecret` | | | The name of a Secret of yours, in the release's namespace, holding the private key under the key `privateKey` |
-| `connectorConfigs.dns.nameservers` | `PISTON_DNS_NAMESERVERS` | the container's own | The DNS servers the connector asks for the names jobs look up, as `address` or `address:port`: a list in Helm, comma separated in the environment |
 | `connectorConfigs.logLevel` | `PISTON_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`; see [Logs](#logs) |
 | `connectorConfigs.apiUrl` | `PISTON_API_URL` | Piston's production | The Piston address the connector connects to; set it only when Piston asks you to |
 | | `PISTON_METRICS_LISTEN` | `:9090` | Where the [metrics](#metrics) are served |
@@ -174,8 +173,8 @@ The connector reads its settings once, at start, and reports every mistake in
 them at once.
 
 The private addresses the tunnel uses inside jobs, `100.127.0.0/16` unless you
-change them, are set in the Piston console: **Tunnel addresses**, in the
-network connector's **Settings**. Change them only if they overlap a network a
+change them, are set in the Piston console: **Tunnel addresses**, on the
+network connector's **Advanced** tab. Change them only if they overlap a network a
 job must reach. The console takes a change only while the connector has no
 open tunnel, and every replica then restarts on the new addresses.
 
@@ -190,18 +189,19 @@ open tunnel, and every replica then restarts on the new addresses.
 2. **A job asks for a tunnel.** The `getpiston/tunnel-action` step names the
    connector. Piston checks the job's GitHub identity, its repository,
    environment and branch, against the connector's routing rules, and hands
-   the tunnel to an online instance. The job gets the resources of every rule
+   the tunnel to an online instance. The job gets the authorized resources of every rule
    that matched, as the rules stand at that moment.
 3. **The job and the connector get connected.** An encrypted tunnel joins
    them, and the step ends once it is up.
 4. **The job's traffic to your resources goes through the connector.** In the
-   job, the matched rules' **Networks**, **Route by hostname** names and **DNS
-   domains** go through the tunnel; the rest of the job's traffic leaves the
-   runner as usual. The connector checks every connection and lookup against
-   the job's resources, makes the connection from your network, and logs it.
-   A name under **Route by hostname** resolves, in the job, to one of the
-   connector's tunnel addresses, `100.127.x.y` by default; the connector
-   looks the name up with its own DNS servers and connects to the real host.
+   job, the matched rules' **Network CIDRs** and **Hostname matchers**, and the
+   names under the nameservers' match domains, go through the tunnel; the rest
+   of the job's traffic leaves the runner as usual. The connector checks every
+   connection and lookup against the job's authorized resources, makes the
+   connection from your network, and logs it. A name a **Hostname matcher**
+   matches resolves, in the job, to one of the connector's tunnel addresses,
+   `100.127.x.y` by default; the connector looks the name up with its
+   nameservers and connects to the real host.
 5. **The tunnel ends with the run.** Piston closes it when the job's workflow
    run completes, or after 6 hours. When its instance stops, Piston moves it
    to another online instance within two minutes: connections open at that
@@ -248,9 +248,8 @@ networkPolicy:
 Each entry allows the connector's pods to reach its `cidr`, minus its `except`
 ranges, and nothing else; DNS to the cluster's `kube-dns` is always allowed. A
 job that tries a refused address sees its connection fail, as when no rule
-grants it. Keep Piston and its runners, on the internet, inside an allowed
-range, and the DNS servers of `connectorConfigs.dns.nameservers` too when you
-set them. The policy works only where the cluster's network plugin enforces
+grants it. Keep the internet inside an allowed range, for Piston and the
+tunnels' UDP, and the nameservers you set in the console too. The policy works only where the cluster's network plugin enforces
 NetworkPolicy, as Calico, Cilium and the Amazon VPC CNI with network policy
 turned on do; elsewhere Kubernetes accepts it and nothing applies it. The
 ranges cover destinations outside the cluster: Cilium and GKE Dataplane V2
@@ -260,27 +259,27 @@ rules grant in-cluster names cannot reach them with the policy on.
 ## Routing rules
 
 What a job reaches is written in the Piston console, not here. A network
-connector's routing rules are on its **Routing rules** tab. Each has a name,
-unique on the connector, and says two things: **Job conditions**, which jobs
-the rule admits, and **Resources**, what those jobs reach. Every condition you fill in must match the job, and a list
-left empty matches any; `*` matches any text, and case does not matter.
+connector's routing rules are on its **Settings** tab. Each has a name,
+unique on the connector, and says two things: **Job matchers**, which jobs
+the rule admits, and **Authorized resources**, what those jobs reach. Each of
+Repositories, Environments and Branches you fill in must match the job, and a
+list left empty matches any; `*` matches any text, and case does not matter.
 
-A job may connect when any rule's job conditions match it, and it reaches the
-resources of every rule that matches it, together. Rules only add: there is no
+A job may connect when any rule's job matchers match it, and it reaches the
+authorized resources of every rule that matches it, together. Rules only add: there is no
 deny rule, and a connector with no rules admits no job. Everything else a job
 sends through the tunnel is refused.
 
-| Job condition | Example | Matches | Keep in mind |
+| Job matcher | Example | Matches | Keep in mind |
 |---|---|---|---|
 | Repositories | `acme-inc/api`, `acme-inc/*` | the job's repository, as `owner/repo`; `*` alone is every repository | everyone who can run a workflow there can open the tunnel |
 | Environments | `production` | the job's GitHub environment | a job without one matches only a rule that sets no environments; a job in one waits for that environment's required reviewers |
 | Branches | `main`, `release/*` | the branch the job runs for | jobs for tags and pull requests never match a rule that sets branches; a rule is only as safe as the protection on its branches |
 
-| Resource | Example | What a matching job gets |
+| Authorized resource | Example | What a matching job gets |
 |---|---|---|
-| Networks | `10.20.0.0/16`, the addresses of your VPC | every address in the range, reached by address. A range is its first address and a size: `/16` is the 65,536 addresses from `10.20.0.0` to `10.20.255.255`, `/32` one address. IPv4 only |
-| Route by hostname | `postgres.data.svc.cluster.local`, your Postgres Service; `*.kafka.internal` | those hosts, by name: an exact name, or `*.x` for `x` and every name under it. The connector looks the name up in your network, so the job needs no matching network |
-| DNS domains | `corp.example.com` | the names under the domain, looked up through the connector as your DNS servers answer them. The job reaches their addresses only where they fall inside its Networks. `.` is every lookup |
+| Network CIDRs | `10.20.0.0/16`, the addresses of your VPC | every address in the range, reached by address. A range is its first address and a size: `/16` is the 65,536 addresses from `10.20.0.0` to `10.20.255.255`, `/32` one address. IPv4 only |
+| Hostname matchers | `postgres.data.svc.cluster.local`, your Postgres Service; `*.kafka.internal` | those hosts, by name: an exact name, or `*.x` for `x` and every name under it. The connector looks the name up in your network, so the job needs no matching network CIDR |
 
 **Grant the narrowest resources a job needs.** A new rule starts empty.
 `0.0.0.0/0` opens everything the connector's container can reach: the
@@ -290,10 +289,28 @@ the nodes. A range that holds your pods' addresses opens every pod in it.
 
 TCP and UDP work through the tunnel; `ping` does not. A job reaches its
 runner's own addresses, Docker's `172.17.0.0/16` among them, on the runner,
-never through the tunnel, whatever its Networks hold.
+never through the tunnel, whatever its Network CIDRs hold.
 
-A tunnel keeps the resources it opened with: an edit of the routing rules
-applies to the tunnels opened after it, so re-run a job to try an edit.
+A tunnel keeps the authorized resources it opened with: an edit of the
+routing rules applies to the tunnels opened after it, so re-run a job to try
+an edit.
+
+## Nameservers
+
+Which of your DNS servers answer which names is set in the Piston console
+too, on the connector's **Settings** tab, under **Configure Nameservers**.
+Each entry has a name, up to 3 nameservers, each an IP address and the port it
+answers on, 53 unless your server uses another, and its match domains, such as
+`corp.internal`. A lookup goes to the entry with the most specific domain that
+covers the name. `.`, shown as ALL, answers every name no other entry covers,
+a hostname matcher's among them; without one, those go to the DNS of the
+machine or cluster the connector runs on.
+
+Every job of the connector can look up the names under the match domains, `.`
+aside, and reaches their addresses only inside its routing rules' Network
+CIDRs. Two groups of jobs that must not see each other's internal names get a
+connector each. A change reaches every instance within 20 seconds, without a
+restart; a job already running keeps the domains it started with.
 
 ## Logs
 
@@ -310,13 +327,13 @@ are an audit log of what every job did through the tunnel. Each has an
 |---|---|---|
 | `connector_started`, `connector_stopped` | the connector starts, or stops on a signal or an error | `instance_id`, as the console's Instances list shows it; `error` |
 | `control_connected`, `control_closed` | its connection to Piston comes up or drops; it reconnects on its own | `error`, `retry_in` |
-| `connector_configured` | the connector takes its tunnel addresses from Piston, at its first connection | `tunnel_range` |
+| `connector_configured` | the connector takes its tunnel addresses and nameservers from Piston, at its first connection and whenever the nameservers change | `tunnel_range`, `dns_servers` |
 | `control_unauthorized` | Piston no longer accepts this connector: it was deleted in the console, or recreated with another key; every job's tunnel on it ends | `error`, `retry_in` |
-| `tunnel_opened`, `tunnel_established`, `tunnel_closed` | a job is assigned to this connector, its tunnel comes up, and it ends | `runner_public_key`, `runner_endpoint`, `reach`; `reason` and `connections` on the close |
-| `tunnel_reach_changed` | Piston sent a job's tunnel again under different routing rules | `reach` |
+| `tunnel_opened`, `tunnel_established`, `tunnel_closed` | a job is assigned to this connector, its tunnel comes up, and it ends | `runner_public_key`, `runner_endpoint`, `authorized_resources`; `reason` and `connections` on the close |
+| `tunnel_authorized_resources_changed` | Piston sent a job's tunnel again under different routing rules | `authorized_resources` |
 | `connection_opened`, `connection_closed` | a connection from the job to a destination, and its end | `connection_id`, `protocol`, `source`, `destination`, `verdict`, `dialed`; `duration_ms`, `bytes_to_destination` and `bytes_to_runner` on the close |
 | `connection_denied`, `connection_failed` | a connection the rules do not grant, or one the destination did not answer | the same, `verdict`; `error` |
-| `lookup_allowed`, `lookup_forwarded`, `lookup_denied`, `lookup_failed` | a name the job looked up: granted by a rule, passed to your DNS servers unchanged, refused, or unanswered | `name`, `type`, `answer` |
+| `lookup_allowed`, `lookup_forwarded`, `lookup_denied`, `lookup_failed` | a name the job looked up: granted by a rule, passed to your nameservers unchanged, refused, or unanswered | `name`, `type`, `answer` |
 
 A connection's `destination` is what the job asked for, a hostname or an
 address with its port; `dialed` is the address the connector reached;
@@ -378,8 +395,7 @@ are fixed.
 |---|---|
 | `PISTON_CONNECTOR_ID is required`, or `… is not a UUID` | The id the console's install line carries |
 | `PISTON_PRIVATE_KEY is required`, `… is not base64`, or `… the key is N bytes, want 32` | The whole private key, 44 characters ending in `=`, as the console showed it or `wg genkey` printed it |
-| `PISTON_DNS_NAMESERVERS: "…" is not an address or address:port` | IP addresses, such as `10.20.0.2` or `10.20.0.2:5353`, not hostnames |
-| `PISTON_DNS_NAMESERVERS is empty and /etc/resolv.conf names no nameserver` | Set `connectorConfigs.dns.nameservers` |
+| `/etc/resolv.conf names no nameserver` | Give the container a DNS server: Docker's `--dns`, or the pod's `dnsConfig` |
 | `PISTON_LOG_LEVEL "…" is none of debug, info, warn and error` | One of those |
 | `PISTON_API_URL: "…" is not an http or https URL` | Leave it unset unless Piston gave you another |
 
@@ -403,7 +419,7 @@ fix to the network takes effect without a restart.
 
 | The step says | Cause | Fix |
 |---|---|---|
-| `no connector of that name admits the job` | No connector of exactly that name, case included, in the organization that owns the job's repository, or no routing rule whose job conditions match the job. Piston does not say which, so a job cannot probe for names | The name as the console shows it. Then the rules: jobs for tags and pull requests match no rule that sets Branches, and a job with no environment no rule that sets Environments |
+| `no connector of that name admits the job` | No connector of exactly that name, case included, in the organization that owns the job's repository, or no routing rule whose job matchers match the job. Piston does not say which, so a job cannot probe for names | The name as the console shows it. Then the rules: jobs for tags and pull requests match no rule that sets Branches, and a job with no environment no rule that sets Environments |
 | `the tunnel to <name> did not come up within <N> s` | No instance online, or the job and the instance could not get connected | If no instance is online, [see above](#no-instance-is-online). If the log has a `tunnel_opened` for the job and then a `tunnel_closed` with the `reason` `handshake_timeout` 15 s later, with no `tunnel_established` between, the tunnel's UDP is blocked: allow UDP to and from any address and port. If it has no `tunnel_opened`, no instance took the tunnel in time, as just after a restart: a longer `timeout` on the step waits for one |
 | `every instance of the connector holds 100 tunnels; more replicas take more` | Every instance is full | More replicas |
 | `every tunnel address of the connector is in use` | The tunnel addresses are too few for the jobs running at once | Wider **Tunnel addresses** |
@@ -415,12 +431,12 @@ Look at the job's lines in the log:
 
 | The log shows | Cause | Fix |
 |---|---|---|
-| `connection_denied`, `verdict` `deny` | No rule the job matched grants that `destination` | Add it to a rule's Networks or Route by hostname, then re-run the job: an edit reaches only tunnels opened after it |
-| `lookup_denied` | The job looked up a name that reached the connector, but no rule it matched grants | Add the name under Route by hostname |
-| `connection_failed`, `verdict` `unresolved` | The connector's DNS servers do not know the name | Set `connectorConfigs.dns.nameservers` to DNS servers that resolve your internal names |
-| `lookup_failed` | The connector's DNS servers did not answer | Check the connector reaches them |
+| `connection_denied`, `verdict` `deny` | No rule the job matched grants that `destination` | Add it to a rule's Network CIDRs or Hostname matchers, then re-run the job: an edit reaches only tunnels opened after it |
+| `lookup_denied` | The job looked up a name that reached the connector, but no rule it matched grants | Add the name to a rule's Hostname matchers, or its domain to the nameservers' match domains |
+| `connection_failed`, `verdict` `unresolved` | The connector's nameservers do not know the name | Add an entry under **Configure Nameservers** for the name's domain, with DNS servers that resolve it |
+| `lookup_failed` | The connector's nameservers did not answer | Check the connector reaches them |
 | `connection_failed`, `verdict` `dial_failed` | The connector could not connect to the destination | The service is down, or a firewall, a security group or the chart's network policy stops the connector. Try the same connection from where the connector runs |
-| Nothing for that destination | The connection never took the tunnel | Its address is outside the matched rules' Networks, and its name outside their Route by hostname and DNS domains, so it left the runner as usual. A name under DNS domains alone resolves to its real address, which a Network must hold. Docker's `172.17.0.0/16`, IPv6 and `ping` never take the tunnel |
+| Nothing for that destination | The connection never took the tunnel | Its address is outside the matched rules' Network CIDRs, and its name outside their Hostname matchers and the nameservers' match domains, so it left the runner as usual. A name under DNS domains alone resolves to its real address, which a Network must hold. Docker's `172.17.0.0/16`, IPv6 and `ping` never take the tunnel |
 
 ### Jobs lose connections mid-run, or run slowly
 
