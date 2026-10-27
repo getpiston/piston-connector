@@ -2,9 +2,9 @@
 
 The connector lets jobs on Piston runners reach services inside your network:
 a database to migrate, an internal API to call, a service behind your VPN.
-You run one small container in that network. It connects out to Piston and
-opens no inbound port, and it holds each job to the routing rules you write in
-the Piston console: a job reaches what they grant and nothing else.
+You run one small container in that network. It connects to Piston, and it
+holds each job to the routing rules you write in the Piston console: a job
+reaches what they grant and nothing else.
 
 ## Quick start with Docker
 
@@ -181,7 +181,7 @@ open tunnel, and every replica then restarts on the new addresses.
 
 ## How it works
 
-1. **The connector connects out to Piston.** Each container, an *instance*,
+1. **The connector connects to Piston.** Each container, an *instance*,
    keeps one HTTPS connection to Piston open and proves on each connect that
    it holds the connector's private key; Piston keeps only the public half.
    The console lists it under **Instances**, **Online** while it is connected
@@ -192,9 +192,8 @@ open tunnel, and every replica then restarts on the new addresses.
    environment and branch, against the connector's routing rules, and hands
    the tunnel to an online instance. The job gets the resources of every rule
    that matched, as the rules stand at that moment.
-3. **The instance dials the job's runner.** It opens an encrypted WireGuard
-   tunnel to the runner, out over UDP from your network, and the step ends
-   once the tunnel is up. Nothing reaches into your network uninvited.
+3. **The job and the connector get connected.** An encrypted tunnel joins
+   them, and the step ends once it is up.
 4. **The job's traffic to your resources goes through the connector.** In the
    job, the matched rules' **Networks**, **Route by hostname** names and **DNS
    domains** go through the tunnel; the rest of the job's traffic leaves the
@@ -210,11 +209,10 @@ open tunnel, and every replica then restarts on the new addresses.
 
 ## What the connector needs from your network
 
-- **Outbound connections only**: HTTPS (TCP 443) to
-  `api.runners.eu.prod.piston.sh`, a connection that stays open, and UDP to
-  Piston's runners, any address and port since the runners change, which
-  carries the encrypted tunnels. The UDP cannot pass through an HTTP proxy.
-  It needs no inbound port, no volume and no extra Linux capability. The
+- **HTTPS and UDP**: HTTPS (TCP 443) to `api.runners.eu.prod.piston.sh`, a
+  connection that stays open, and UDP to and from any address and port,
+  which carries the encrypted tunnels. The UDP cannot pass through an HTTP
+  proxy. It needs no volume and no extra Linux capability. The
   chart runs it as a non-root user with every capability dropped, no
   privilege escalation, a read-only root filesystem and the `RuntimeDefault`
   seccomp profile, which meets Kubernetes' restricted Pod Security Standard.
@@ -327,8 +325,8 @@ or `allow_ip` for what a rule granted, `deny`, `unresolved` when the hostname
 did not resolve, or `dial_failed`. A `tunnel_closed` line's `reason` is one of
 Piston's, `run_completed` (the run finished), `cap` (the tunnel reached its
 6-hour limit), `connector_deleted` or `closed` (Piston no longer lists the
-tunnel), or one of the connector's own: `handshake_timeout` (it could not
-reach the job), `silent` (the job stopped answering), `address_reused` (a
+tunnel), or one of the connector's own: `handshake_timeout` (the job and the
+connector could not get connected), `silent` (the job stopped answering), `address_reused` (a
 newer tunnel took its address), `shutdown` (the connector was stopped) or
 `unauthorized`.
 
@@ -406,7 +404,7 @@ fix to the network takes effect without a restart.
 | The step says | Cause | Fix |
 |---|---|---|
 | `no connector of that name admits the job` | No connector of exactly that name, case included, in the organization that owns the job's repository, or no routing rule whose job conditions match the job. Piston does not say which, so a job cannot probe for names | The name as the console shows it. Then the rules: jobs for tags and pull requests match no rule that sets Branches, and a job with no environment no rule that sets Environments |
-| `the tunnel to <name> did not come up within <N> s` | No instance online, or the instance cannot reach the job's runner | If no instance is online, [see above](#no-instance-is-online). If the log has a `tunnel_opened` for the job and then a `tunnel_closed` with the `reason` `handshake_timeout` 15 s later, with no `tunnel_established` between, the connector cannot send UDP to the runner: allow outbound UDP to any address and port. If it has no `tunnel_opened`, no instance took the tunnel in time, as just after a restart: a longer `timeout` on the step waits for one |
+| `the tunnel to <name> did not come up within <N> s` | No instance online, or the job and the instance could not get connected | If no instance is online, [see above](#no-instance-is-online). If the log has a `tunnel_opened` for the job and then a `tunnel_closed` with the `reason` `handshake_timeout` 15 s later, with no `tunnel_established` between, the tunnel's UDP is blocked: allow UDP to and from any address and port. If it has no `tunnel_opened`, no instance took the tunnel in time, as just after a restart: a longer `timeout` on the step waits for one |
 | `every instance of the connector holds 100 tunnels; more replicas take more` | Every instance is full | More replicas |
 | `every tunnel address of the connector is in use` | The tunnel addresses are too few for the jobs running at once | Wider **Tunnel addresses** |
 
