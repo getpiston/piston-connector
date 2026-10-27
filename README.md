@@ -20,7 +20,8 @@ next section, [Kubernetes with Helm](#kubernetes-with-helm), is the way.
    the key yourself instead, see [Your own key](#your-own-key).
 
 2. **Run the container** on a machine that can reach the services your jobs
-   need. The console's Docker line is this one with the id and key filled in:
+   need. The console's Docker line is this one with the id, the key and the
+   newest version filled in:
 
    ```sh
    docker run -d --name piston-connector --restart unless-stopped \
@@ -30,13 +31,15 @@ next section, [Kubernetes with Helm](#kubernetes-with-helm), is the way.
      'ghcr.io/getpiston/piston-connector:<version>'
    ```
 
-   Put in the version you want, such as `1.0.0`: each release is one image,
-   tagged with its version. The flags give the container a read-only
-   filesystem and no Linux privileges, and it needs none.
+   Each release is one image, tagged with its version, such as `1.0.0`. The
+   flags give the container a read-only filesystem and no Linux privileges,
+   and it needs none. Keep `--restart unless-stopped`: the connector exits to
+   take a change of its tunnel addresses, and Docker starts it again.
 
 3. **See it connect.** The connector's page in the console lists the
    container under **Instances** once it connects. If it does not appear,
-   `docker logs piston-connector` says why (see [Logs](#logs)).
+   `docker logs piston-connector` says why (see
+   [Troubleshooting](#troubleshooting)).
 
 4. **Write a routing rule.** On the connector's **Routing rules** tab, add a
    rule: its **Name**, unique on the connector, its **Job conditions**, which
@@ -71,10 +74,12 @@ next section, [Kubernetes with Helm](#kubernetes-with-helm), is the way.
 
 ## Kubernetes with Helm
 
-The console's Kubernetes line installs the newest chart in its own namespace:
+The console's Kubernetes line installs the newest chart in its own namespace,
+with the chart's version filled in:
 
 ```sh
 helm install piston-connector oci://ghcr.io/getpiston/charts/piston-connector \
+  --version <chart version> \
   --namespace piston-connector --create-namespace \
   --set connectorConfigs.connectorId=<connector id> \
   --set connectorConfigs.privateKey=<private key>
@@ -82,8 +87,7 @@ helm install piston-connector oci://ghcr.io/getpiston/charts/piston-connector \
 
 The chart writes the private key into a Secret and runs two replicas, spread
 across nodes; the console lists each one under **Instances**. The chart's
-`appVersion` is the version of the connector image it installs, and
-`--version <chart version>` pins a chart release.
+`appVersion` is the version of the connector image it installs.
 
 ### Your own key
 
@@ -143,9 +147,14 @@ helm upgrade piston-connector oci://ghcr.io/getpiston/charts/piston-connector \
 
 This moves to the newest chart, and so to its connector image, and keeps the
 settings you installed with; with a values file, pass `-f values.yaml` in
-place of `--reuse-values`. A replica that is replaced cuts its jobs' open
-connections, and Piston moves their tunnels to a replica still running within
-two minutes, so a job in the middle of a transfer may see one fail.
+place of `--reuse-values`. With Docker, remove the container
+(`docker rm -f piston-connector`) and run its line again with the new
+version. A replica that is replaced cuts its jobs' open connections, and
+Piston moves their tunnels to a replica still running within two minutes, so
+a job in the middle of a transfer may see one fail.
+
+The console's **Instances** list marks an instance running an older release
+than the newest with **Update Required** and the newest version.
 
 ## Settings
 
@@ -167,16 +176,48 @@ them at once.
 The private addresses the tunnel uses inside jobs, `100.127.0.0/16` unless you
 change them, are set in the Piston console: **Tunnel addresses**, in the
 network connector's **Settings**. Change them only if they overlap a network a
-job must reach; a change restarts every replica on the new addresses.
+job must reach. The console takes a change only while the connector has no
+open tunnel, and every replica then restarts on the new addresses.
+
+## How it works
+
+1. **The connector connects out to Piston.** Each container, an *instance*,
+   keeps one HTTPS connection to Piston open and proves on each connect that
+   it holds the connector's private key; Piston keeps only the public half.
+   The console lists it under **Instances**, **Online** while it is connected
+   and heard from within the last minute. Over this connection it receives
+   its tunnel addresses and the tunnels it serves.
+2. **A job asks for a tunnel.** The `getpiston/tunnel-action` step names the
+   connector. Piston checks the job's GitHub identity, its repository,
+   environment and branch, against the connector's routing rules, and hands
+   the tunnel to an online instance. The job gets the resources of every rule
+   that matched, as the rules stand at that moment.
+3. **The instance dials the job's runner.** It opens an encrypted WireGuard
+   tunnel to the runner, out over UDP from your network, and the step ends
+   once the tunnel is up. Nothing reaches into your network uninvited.
+4. **The job's traffic to your resources goes through the connector.** In the
+   job, the matched rules' **Networks**, **Route by hostname** names and **DNS
+   domains** go through the tunnel; the rest of the job's traffic leaves the
+   runner as usual. The connector checks every connection and lookup against
+   the job's resources, makes the connection from your network, and logs it.
+   A name under **Route by hostname** resolves, in the job, to one of the
+   connector's tunnel addresses, `100.127.x.y` by default; the connector
+   looks the name up with its own DNS servers and connects to the real host.
+5. **The tunnel ends with the run.** Piston closes it when the job's workflow
+   run completes, or after 6 hours. When its instance stops, Piston moves it
+   to another online instance within two minutes: connections open at that
+   moment fail, and new ones work again once it has moved.
 
 ## What the connector needs from your network
 
-- **Outbound connections only**: HTTPS to Piston, and UDP to Piston's runners,
-  which carries the encrypted tunnels. It needs no inbound port, no volume and
-  no extra Linux capability. The chart runs it as a non-root user with every
-  capability dropped, no privilege escalation, a read-only root filesystem and
-  the `RuntimeDefault` seccomp profile, which meets Kubernetes' restricted Pod
-  Security Standard.
+- **Outbound connections only**: HTTPS (TCP 443) to
+  `api.runners.eu.prod.piston.sh`, a connection that stays open, and UDP to
+  Piston's runners, any address and port since the runners change, which
+  carries the encrypted tunnels. The UDP cannot pass through an HTTP proxy.
+  It needs no inbound port, no volume and no extra Linux capability. The
+  chart runs it as a non-root user with every capability dropped, no
+  privilege escalation, a read-only root filesystem and the `RuntimeDefault`
+  seccomp profile, which meets Kubernetes' restricted Pod Security Standard.
 - **A path to what your routing rules grant.** A job can reach at most what
   the connector's container can reach, and your own firewall or the chart's
   [network policy](#a-network-policy-below-the-rules) can narrow that further.
@@ -249,7 +290,12 @@ internet through your network, the cloud metadata service and with it the
 node's cloud credentials unless your cluster blocks it, the Kubernetes API, and
 the nodes. A range that holds your pods' addresses opens every pod in it.
 
-TCP and UDP work through the tunnel; `ping` does not.
+TCP and UDP work through the tunnel; `ping` does not. A job reaches its
+runner's own addresses, Docker's `172.17.0.0/16` among them, on the runner,
+never through the tunnel, whatever its Networks hold.
+
+A tunnel keeps the resources it opened with: an edit of the routing rules
+applies to the tunnels opened after it, so re-run a job to try an edit.
 
 ## Logs
 
@@ -301,6 +347,92 @@ annotation scrapes them.
 | `piston_connector_tunnels_established` | of those, the ones the job's side has answered |
 | `piston_connector_flows_total{protocol, verdict}` | connections from jobs, by verdict |
 | `piston_connector_dns_answers_total{kind}` | lookups, by answer |
+
+## Troubleshooting
+
+A failure shows in one of three places: the job's tunnel step, the console's
+**Instances** list, or the connector's log. The
+[tunnel step's guide](https://github.com/getpiston/tunnel-action#when-the-step-fails)
+lists every message the step fails with. A job's log lines carry its
+`repository` and its `gh_run_id`, the number in the run's GitHub URL:
+
+```sh
+docker logs piston-connector
+kubectl -n piston-connector logs -l app.kubernetes.io/name=piston-connector --prefix --tail=500
+```
+
+### The connector does not start
+
+`helm install` refuses a missing setting with
+`connectorConfigs.connectorId is the connector's id from the console's install line`,
+`connectorConfigs.privateKey or connectorConfigs.existingSecret is required`
+or `set connectorConfigs.privateKey or connectorConfigs.existingSecret, not both`.
+A pod stuck in `CreateContainerConfigError` names a Secret that is not in the
+release's namespace, or one with no `privateKey` key in it;
+`kubectl -n piston-connector describe pod` says which.
+
+Past those, the connector checks its settings at start. On a mistake it
+writes one `connector_stopped` line whose `error` lists every mistake after
+`configuration:`, and exits; Docker or Kubernetes starts it again until they
+are fixed.
+
+| `error` holds | Fix |
+|---|---|
+| `PISTON_CONNECTOR_ID is required`, or `… is not a UUID` | The id the console's install line carries |
+| `PISTON_PRIVATE_KEY is required`, `… is not base64`, or `… the key is N bytes, want 32` | The whole private key, 44 characters ending in `=`, as the console showed it or `wg genkey` printed it |
+| `PISTON_DNS_NAMESERVERS: "…" is not an address or address:port` | IP addresses, such as `10.20.0.2` or `10.20.0.2:5353`, not hostnames |
+| `PISTON_DNS_NAMESERVERS is empty and /etc/resolv.conf names no nameserver` | Set `connectorConfigs.dns.nameservers` |
+| `PISTON_LOG_LEVEL "…" is none of debug, info, warn and error` | One of those |
+| `PISTON_API_URL: "…" is not an http or https URL` | Leave it unset unless Piston gave you another |
+
+A `connector_stopped` line saying `the tunnel range changed from … to …; the
+connector restarts to take it` follows a change of **Tunnel addresses** and is
+no fault: Docker's `--restart unless-stopped`, or Kubernetes, starts the
+connector again on the new addresses.
+
+### No instance is online
+
+| The log shows | Cause | Fix |
+|---|---|---|
+| `control_closed` again and again, its `error` starting `dial wss://…` with a DNS, TLS, timeout or refused-connection error | The container cannot reach Piston | Allow outbound HTTPS (TCP 443) to `api.runners.eu.prod.piston.sh`, and a DNS server in the container that resolves it |
+| `control_unauthorized`, its `error` holding `the proof does not verify` | Piston does not take this id and key together: the key is not the private half of the connector's public key, the id is another connector's, or the connector was deleted | The id and the key from the same creation. A lost key cannot be recovered: see [Rotating the key](#rotating-the-key) |
+| `control_connected`, yet the connector's page lists no instance | The instance runs with another connector's id and key, and shows on that connector's page | This connector's id and key |
+
+The connector retries on its own, waiting longer each time up to 30 s, so a
+fix to the network takes effect without a restart.
+
+### The tunnel step fails
+
+| The step says | Cause | Fix |
+|---|---|---|
+| `no connector of that name admits the job` | No connector of exactly that name, case included, in the organization that owns the job's repository, or no routing rule whose job conditions match the job. Piston does not say which, so a job cannot probe for names | The name as the console shows it. Then the rules: jobs for tags and pull requests match no rule that sets Branches, and a job with no environment no rule that sets Environments |
+| `the tunnel to <name> did not come up within <N> s` | No instance online, or the instance cannot reach the job's runner | If no instance is online, [see above](#no-instance-is-online). If the log has a `tunnel_opened` for the job and then a `tunnel_closed` with the `reason` `handshake_timeout` 15 s later, with no `tunnel_established` between, the connector cannot send UDP to the runner: allow outbound UDP to any address and port. If it has no `tunnel_opened`, no instance took the tunnel in time, as just after a restart: a longer `timeout` on the step waits for one |
+| `every instance of the connector holds 100 tunnels; more replicas take more` | Every instance is full | More replicas |
+| `every tunnel address of the connector is in use` | The tunnel addresses are too few for the jobs running at once | Wider **Tunnel addresses** |
+
+### The job cannot reach a service
+
+The step printed the rules that matched, yet a connection from the job fails.
+Look at the job's lines in the log:
+
+| The log shows | Cause | Fix |
+|---|---|---|
+| `connection_denied`, `verdict` `deny` | No rule the job matched grants that `destination` | Add it to a rule's Networks or Route by hostname, then re-run the job: an edit reaches only tunnels opened after it |
+| `lookup_denied` | The job looked up a name that reached the connector, but no rule it matched grants | Add the name under Route by hostname |
+| `connection_failed`, `verdict` `unresolved` | The connector's DNS servers do not know the name | Set `connectorConfigs.dns.nameservers` to DNS servers that resolve your internal names |
+| `lookup_failed` | The connector's DNS servers did not answer | Check the connector reaches them |
+| `connection_failed`, `verdict` `dial_failed` | The connector could not connect to the destination | The service is down, or a firewall, a security group or the chart's network policy stops the connector. Try the same connection from where the connector runs |
+| Nothing for that destination | The connection never took the tunnel | Its address is outside the matched rules' Networks, and its name outside their Route by hostname and DNS domains, so it left the runner as usual. A name under DNS domains alone resolves to its real address, which a Network must hold. Docker's `172.17.0.0/16`, IPv6 and `ping` never take the tunnel |
+
+### Jobs lose connections mid-run, or run slowly
+
+| The log or the cluster shows | Cause | Fix |
+|---|---|---|
+| `tunnel_closed` with the `reason` `shutdown` on one instance, then `tunnel_opened` for the same `runner_public_key` on another | The instance stopped: an upgrade, a node drain, a restart | Expected: connections open at that moment fail. Run two or more replicas, and let jobs retry a failed connection |
+| `tunnel_closed` with the `reason` `silent` | The job's side stopped answering for 3 minutes | Usual for a job that ended while the rest of its run goes on |
+| `control_unauthorized` while jobs run | The connector was deleted in the console | Every tunnel on it ends |
+| A pod `OOMKilled` | Too many live connections for the memory limit; each UDP flow holds about 138 KiB | Raise `resources.limits.memory`, or add replicas |
+| Transfers slower than the network | A CPU limit throttles the connector | No CPU limit, and more replicas for more throughput |
 
 ## Rotating the key
 
