@@ -345,9 +345,9 @@ covers the name. `.`, shown as ALL, answers every name no other entry covers,
 a hostname matcher's among them; without one, those go to the DNS of the
 machine or cluster the connector runs on.
 
-Every job of the connector can look up the names under the match domains, `.`
-aside, and reaches their addresses only inside its routing rules' Network
-CIDRs. Two groups of jobs that must not see each other's internal names get a
+Every job a routing rule admits can look up the names under the match
+domains, `.` aside, and reaches their addresses only inside its routing rules'
+Network CIDRs. A job the exit node alone admits looks up none of them. Two groups of jobs that must not see each other's internal names get a
 connector each. A change reaches every instance within 20 seconds, without a
 restart; a job already running keeps the domains it started with.
 
