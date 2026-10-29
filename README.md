@@ -46,8 +46,8 @@ next section, [Kubernetes with Helm](#kubernetes-with-helm), is the way.
    which jobs may connect, and its **Authorized resources**, what they reach.
    For example, a rule `api-db` lets jobs of `acme-inc/api` reach the hostname
    `db.internal`. A connector with no routing rule admits no job. Above them,
-   **Configure Nameservers** says which of your DNS servers answer which
-   domains. See [Routing rules](#routing-rules) and [Nameservers](#nameservers).
+   **Configure Connector** holds the **Nameservers**, which of your DNS servers
+   answer which domains, and the **Exit node** switch. See [Routing rules](#routing-rules) and [Nameservers](#nameservers).
 
 5. **Open the tunnel from a job.** Add the `getpiston/tunnel-action` step,
    with the connector's name, before the steps that need your network:
@@ -201,7 +201,9 @@ open tunnel, and every replica then restarts on the new addresses.
    connection from your network, and logs it. A name a **Hostname matcher**
    matches resolves, in the job, to one of the connector's tunnel addresses,
    `100.127.x.y` by default; the connector looks the name up with its
-   nameservers and connects to the real host.
+   nameservers and connects to the real host. A job that asks for the
+   connector as its [exit node](#exit-node) sends its internet traffic
+   through the connector too.
 5. **The tunnel ends with the run.** Piston closes it when the job's workflow
    run completes, or after 6 hours. When its instance stops, Piston moves it
    to another online instance within two minutes: connections open at that
@@ -219,6 +221,9 @@ open tunnel, and every replica then restarts on the new addresses.
 - **A path to what your routing rules grant.** A job can reach at most what
   the connector's container can reach, and your own firewall or the chart's
   [network policy](#a-network-policy-below-the-rules) can narrow that further.
+  With the [exit node](#exit-node) on, that is the internet as well,
+  and the public DNS servers `1.1.1.1` and `8.8.8.8` on port 53, which the
+  jobs' lookups go to.
 - **Two or more replicas.** A job's tunnel stays on one replica. When that
   replica stops, its tunnels' open connections are cut, and Piston moves them to
   a replica still running within two minutes. Two or more, the chart's default,
@@ -249,7 +254,9 @@ Each entry allows the connector's pods to reach its `cidr`, minus its `except`
 ranges, and nothing else; DNS to the cluster's `kube-dns` is always allowed. A
 job that tries a refused address sees its connection fail, as when no rule
 grants it. Keep the internet inside an allowed range, for Piston and the
-tunnels' UDP, and the nameservers you set in the console too. The policy works only where the cluster's network plugin enforces
+tunnels' UDP, and the nameservers you set in the console too. With the
+exit node on, the policy is also where public addresses that are private
+to you, a VPC on a public range for one, stay out of reach. The policy works only where the cluster's network plugin enforces
 NetworkPolicy, as Calico, Cilium and the Amazon VPC CNI with network policy
 turned on do; elsewhere Kubernetes accepts it and nothing applies it. The
 ranges cover destinations outside the cluster: Cilium and GKE Dataplane V2
@@ -285,7 +292,9 @@ sends through the tunnel is refused.
 `0.0.0.0/0` opens everything the connector's container can reach: the
 internet through your network, the cloud metadata service and with it the
 node's cloud credentials unless your cluster blocks it, the Kubernetes API, and
-the nodes. A range that holds your pods' addresses opens every pod in it.
+the nodes. A range that holds your pods' addresses opens every pod in it. To
+send jobs' internet traffic through your network without opening the rest, use
+the [exit node](#exit-node) instead.
 
 TCP and UDP work through the tunnel; `ping` does not. A job reaches its
 runner's own addresses, Docker's `172.17.0.0/16` among them, on the runner,
@@ -295,10 +304,40 @@ A tunnel keeps the authorized resources it opened with: an edit of the
 routing rules applies to the tunnels opened after it, so re-run a job to try
 an edit.
 
+## Exit node
+
+A connector can also be an *exit node*: the **Exit node** switch under
+**Configure Connector** on its **Settings** tab in the console. While it is on,
+any job of your organization whose `getpiston/tunnel-action` step sets `exit_node: true`
+sends all of its internet traffic through the connector, so the sites and
+services it calls see your network's public address. The step prints the
+address the connector reaches Piston from, which is that address unless your
+network sends the connector's traffic through a proxy or a NAT with several
+addresses.
+Such a job needs no routing rule, and the exit node opens none of your
+private networks to it: the connector connects it only to an address the
+internet routes, never to `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`,
+`100.64.0.0/10`, link-local addresses such as the cloud metadata service,
+loopback, multicast or reserved ranges, its own tunnel addresses, Azure's
+`168.63.129.16`, GKE's default Service range `34.118.224.0/20`, or Google's
+private API addresses. What its routing rules grant it, it still reaches.
+
+Whatever trusts your network's public address, such as a service that
+allowlists it, trusts every job that uses the exit node, and so does
+whatever trusts your network itself, such as a cloud's private endpoints and
+service perimeters. A network that uses public addresses privately looks like
+the internet to the connector, and so do your nodes' own public addresses,
+with what they serve: keep those out with the
+[network policy](#a-network-policy-below-the-rules). The jobs'
+lookups go to the public DNS servers `1.1.1.1` and `8.8.8.8` through the
+connector, like the rest of their internet traffic. A change reaches every
+instance within 20 seconds, and turning it off cuts the internet traffic of
+jobs already using it.
+
 ## Nameservers
 
 Which of your DNS servers answer which names is set in the Piston console
-too, on the connector's **Settings** tab, under **Configure Nameservers**.
+too, on the connector's **Settings** tab, as the **Nameservers** under **Configure Connector**.
 Each entry has a name, up to 3 nameservers, each an IP address and the port it
 answers on, 53 unless your server uses another, and its match domains, such as
 `corp.internal`. A lookup goes to the entry with the most specific domain that
@@ -327,7 +366,7 @@ are an audit log of what every job did through the tunnel. Each has an
 |---|---|---|
 | `connector_started`, `connector_stopped` | the connector starts, or stops on a signal or an error | `instance_id`, as the console's Instances list shows it; `error` |
 | `control_connected`, `control_closed` | its connection to Piston comes up or drops; it reconnects on its own | `error`, `retry_in` |
-| `connector_configured` | the connector takes its tunnel addresses and nameservers from Piston, at its first connection and whenever the nameservers change | `tunnel_range`, `dns_servers` |
+| `connector_configured` | the connector takes its tunnel addresses, nameservers and exit node from Piston, at its first connection and whenever the nameservers or the exit node change | `tunnel_range`, `dns_servers`, `exit_node` |
 | `control_unauthorized` | Piston no longer accepts this connector: it was deleted in the console, or recreated with another key; every job's tunnel on it ends | `error`, `retry_in` |
 | `tunnel_opened`, `tunnel_established`, `tunnel_closed` | a job is assigned to this connector, its tunnel comes up, and it ends | `runner_public_key`, `runner_endpoint`, `authorized_resources`; `reason` and `connections` on the close |
 | `tunnel_authorized_resources_changed` | Piston sent a job's tunnel again under different routing rules | `authorized_resources` |
@@ -338,7 +377,8 @@ are an audit log of what every job did through the tunnel. Each has an
 A connection's `destination` is what the job asked for, a hostname or an
 address with its port; `dialed` is the address the connector reached;
 `connection_id` joins a connection's lines. Its `verdict` is `allow_hostname`
-or `allow_ip` for what a rule granted, `deny`, `unresolved` when the hostname
+or `allow_ip` for what a rule granted, `allow_exit_node` for an internet
+address the exit node let through, `deny`, `unresolved` when the hostname
 did not resolve, or `dial_failed`. A `tunnel_closed` line's `reason` is one of
 Piston's, `run_completed` (the run finished), `cap` (the tunnel reached its
 6-hour limit), `connector_deleted` or `closed` (Piston no longer lists the
@@ -419,10 +459,11 @@ fix to the network takes effect without a restart.
 
 | The step says | Cause | Fix |
 |---|---|---|
-| `no connector of that name admits the job` | No connector of exactly that name, case included, in the organization that owns the job's repository, or no routing rule whose job matchers match the job. Piston does not say which, so a job cannot probe for names | The name as the console shows it. Then the rules: jobs for tags and pull requests match no rule that sets Branches, and a job with no environment no rule that sets Environments |
+| `no connector of that name admits the job` | No connector of exactly that name, case included, in the organization that owns the job's repository, or no routing rule whose job matchers match the job and, for a step that sets `exit_node: true`, no exit node. Piston does not say which, so a job cannot probe for names | The name as the console shows it. Then the rules: jobs for tags and pull requests match no rule that sets Branches, and a job with no environment no rule that sets Environments |
 | `the tunnel to <name> did not come up within <N> s` | No instance online, or the job and the instance could not get connected | If no instance is online, [see above](#no-instance-is-online). If the log has a `tunnel_opened` for the job and then a `tunnel_closed` with the `reason` `handshake_timeout` 15 s later, with no `tunnel_established` between, the tunnel's UDP is blocked: allow UDP to and from any address and port. If it has no `tunnel_opened`, no instance took the tunnel in time, as just after a restart: a longer `timeout` on the step waits for one |
 | `every instance of the connector holds 100 tunnels; more replicas take more` | Every instance is full | More replicas |
 | `every tunnel address of the connector is in use` | The tunnel addresses are too few for the jobs running at once | Wider **Tunnel addresses** |
+| `the connector is not an exit node` | The step sets `exit_node: true`, a routing rule admits the job, and the connector's **Exit node** is off | Turn it on under **Configure Connector** in the console, or drop `exit_node` from the step |
 
 ### The job cannot reach a service
 
@@ -431,9 +472,9 @@ Look at the job's lines in the log:
 
 | The log shows | Cause | Fix |
 |---|---|---|
-| `connection_denied`, `verdict` `deny` | No rule the job matched grants that `destination` | Add it to a rule's Network CIDRs or Hostname matchers, then re-run the job: an edit reaches only tunnels opened after it |
+| `connection_denied`, `verdict` `deny` | No rule the job matched grants that `destination`, and the exit node does not reach it: it is off, or the address is private | Add it to a rule's Network CIDRs or Hostname matchers, then re-run the job: an edit reaches only tunnels opened after it |
 | `lookup_denied` | The job looked up a name that reached the connector, but no rule it matched grants | Add the name to a rule's Hostname matchers, or its domain to the nameservers' match domains |
-| `connection_failed`, `verdict` `unresolved` | The connector's nameservers do not know the name | Add an entry under **Configure Nameservers** for the name's domain, with DNS servers that resolve it |
+| `connection_failed`, `verdict` `unresolved` | The connector's nameservers do not know the name | Add an entry under **Nameservers**, in **Configure Connector**, for the name's domain, with DNS servers that resolve it |
 | `lookup_failed` | The connector's nameservers did not answer | Check the connector reaches them |
 | `connection_failed`, `verdict` `dial_failed` | The connector could not connect to the destination | The service is down, or a firewall, a security group or the chart's network policy stops the connector. Try the same connection from where the connector runs |
 | Nothing for that destination | The connection never took the tunnel | Its address is outside the matched rules' Network CIDRs, and its name outside their Hostname matchers and the nameservers' match domains, so it left the runner as usual. A name under DNS domains alone resolves to its real address, which a Network must hold. Docker's `172.17.0.0/16`, IPv6 and `ping` never take the tunnel |
