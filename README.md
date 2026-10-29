@@ -310,18 +310,25 @@ A connector can also be an *internet exit*: the **Internet exit** switch on
 its **Settings** tab in the console. While it is on, any job of your
 organization whose `getpiston/tunnel-action` step sets `internet_exit: true`
 sends all of its internet traffic through the connector, so the sites and
-services it calls see your network's public address, which the step prints.
+services it calls see your network's public address. The step prints the
+address the connector reaches Piston from, which is that address unless your
+network sends the connector's traffic through a proxy or a NAT with several
+addresses.
 Such a job needs no routing rule, and the internet exit opens none of your
 private networks to it: the connector connects it only to an address the
 internet routes, never to `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`,
 `100.64.0.0/10`, link-local addresses such as the cloud metadata service,
-loopback, multicast or reserved ranges, or Azure's `168.63.129.16`. What its
-routing rules grant it, it still reaches.
+loopback, multicast or reserved ranges, its own tunnel addresses, Azure's
+`168.63.129.16`, GKE's default Service range `34.118.224.0/20`, or Google's
+private API addresses. What its routing rules grant it, it still reaches.
 
 Whatever trusts your network's public address, such as a service that
-allowlists it, trusts every job that uses the internet exit. A network that
-uses public addresses privately looks like the internet to the connector: keep
-it out with the [network policy](#a-network-policy-below-the-rules). The jobs'
+allowlists it, trusts every job that uses the internet exit, and so does
+whatever trusts your network itself, such as a cloud's private endpoints and
+service perimeters. A network that uses public addresses privately looks like
+the internet to the connector, and so do your nodes' own public addresses,
+with what they serve: keep those out with the
+[network policy](#a-network-policy-below-the-rules). The jobs'
 lookups go to the public DNS servers `1.1.1.1` and `8.8.8.8` through the
 connector, like the rest of their internet traffic. A change reaches every
 instance within 20 seconds, and turning it off cuts the internet traffic of
@@ -452,11 +459,11 @@ fix to the network takes effect without a restart.
 
 | The step says | Cause | Fix |
 |---|---|---|
-| `no connector of that name admits the job` | No connector of exactly that name, case included, in the organization that owns the job's repository, or no routing rule whose job matchers match the job. Piston does not say which, so a job cannot probe for names | The name as the console shows it. Then the rules: jobs for tags and pull requests match no rule that sets Branches, and a job with no environment no rule that sets Environments |
+| `no connector of that name admits the job` | No connector of exactly that name, case included, in the organization that owns the job's repository, or no routing rule whose job matchers match the job and, for a step that sets `internet_exit: true`, no internet exit. Piston does not say which, so a job cannot probe for names | The name as the console shows it. Then the rules: jobs for tags and pull requests match no rule that sets Branches, and a job with no environment no rule that sets Environments |
 | `the tunnel to <name> did not come up within <N> s` | No instance online, or the job and the instance could not get connected | If no instance is online, [see above](#no-instance-is-online). If the log has a `tunnel_opened` for the job and then a `tunnel_closed` with the `reason` `handshake_timeout` 15 s later, with no `tunnel_established` between, the tunnel's UDP is blocked: allow UDP to and from any address and port. If it has no `tunnel_opened`, no instance took the tunnel in time, as just after a restart: a longer `timeout` on the step waits for one |
 | `every instance of the connector holds 100 tunnels; more replicas take more` | Every instance is full | More replicas |
 | `every tunnel address of the connector is in use` | The tunnel addresses are too few for the jobs running at once | Wider **Tunnel addresses** |
-| `the connector is not an internet exit` | The step sets `internet_exit: true` and the connector's **Internet exit** is off | Turn it on in the console, or drop `internet_exit` from the step |
+| `the connector is not an internet exit` | The step sets `internet_exit: true`, a routing rule admits the job, and the connector's **Internet exit** is off | Turn it on in the console, or drop `internet_exit` from the step |
 
 ### The job cannot reach a service
 
