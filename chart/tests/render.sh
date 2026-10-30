@@ -107,11 +107,19 @@ has  "affinity passes through"                    "podAntiAffinity:" \
 has  "resources default"                          "memory: 1Gi"
 has  "log level default"                          'value: "info"'
 has  "log level passes through"                   'value: "debug"' --set "connectorConfigs.logLevel=debug"
-t "the tuning defaults reach the connector"
-out="$(render)"
-if grep -qF 'name: PISTON_TCP_SEND_BUFFER_MAX_MIB' <<<"$out" && grep -qF 'value: "16"' <<<"$out" &&
-  grep -qF 'value: "reno"' <<<"$out" && grep -qF 'value: "4096"' <<<"$out"; then ok; else no; fi
-has  "a send buffer maximum passes through"       'value: "64"' --set "connectorConfigs.tcp.sendBufferMaxMiB=64"
-has  "congestion control passes through"          'value: "cubic"' --set "connectorConfigs.tcp.congestionControl=cubic"
+# env NAME VALUE: the variable NAME renders with exactly VALUE.
+env() {
+  local name="$1" value="$2"; shift 2; t "$name is $value"
+  if render "$@" | grep -A1 -F "name: $name" | grep -qF "value: \"$value\""; then ok; else no; fi
+}
+env PISTON_TCP_SEND_BUFFER_MAX_MIB 16
+env PISTON_TCP_RECEIVE_BUFFER_MAX_MIB 16
+env PISTON_TCP_CONGESTION_CONTROL reno
+env PISTON_TUNNEL_QUEUE_PACKETS 4096
+env PISTON_TCP_SEND_BUFFER_MAX_MIB 64 --set connectorConfigs.tcp.sendBufferMaxMiB=64
+env PISTON_TCP_RECEIVE_BUFFER_MAX_MIB 32 --set connectorConfigs.tcp.receiveBufferMaxMiB=32
+env PISTON_TCP_CONGESTION_CONTROL cubic --set connectorConfigs.tcp.congestionControl=cubic
+env PISTON_TUNNEL_QUEUE_PACKETS 8192 --set connectorConfigs.tcp.tunnelQueuePackets=8192
+has  "values reused from before 1.3.0 render"     "kind: Deployment" --set connectorConfigs.tcp=null
 
 exit "$rc"

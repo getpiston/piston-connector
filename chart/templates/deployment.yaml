@@ -66,14 +66,17 @@ spec:
                   key: privateKey
             - name: PISTON_LOG_LEVEL
               value: {{ .Values.connectorConfigs.logLevel | quote }}
+            {{- /* Values reused from a release before 1.3.0 have no tcp; the connector's defaults are the same. */}}
+            {{- with .Values.connectorConfigs.tcp }}
             - name: PISTON_TCP_SEND_BUFFER_MAX_MIB
-              value: {{ .Values.connectorConfigs.tcp.sendBufferMaxMiB | quote }}
+              value: {{ .sendBufferMaxMiB | quote }}
             - name: PISTON_TCP_RECEIVE_BUFFER_MAX_MIB
-              value: {{ .Values.connectorConfigs.tcp.receiveBufferMaxMiB | quote }}
+              value: {{ .receiveBufferMaxMiB | quote }}
             - name: PISTON_TCP_CONGESTION_CONTROL
-              value: {{ .Values.connectorConfigs.tcp.congestionControl | quote }}
+              value: {{ .congestionControl | quote }}
             - name: PISTON_TUNNEL_QUEUE_PACKETS
-              value: {{ .Values.connectorConfigs.tcp.tunnelQueuePackets | quote }}
+              value: {{ .tunnelQueuePackets | quote }}
+            {{- end }}
             {{- with .Values.connectorConfigs.apiUrl }}
             - name: PISTON_API_URL
               value: {{ . | quote }}
