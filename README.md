@@ -165,6 +165,10 @@ than the newest with **Update Required** and the newest version.
 | `connectorConfigs.existingSecret` | | | The name of a Secret of yours, in the release's namespace, holding the private key under the key `privateKey` |
 | `connectorConfigs.logLevel` | `PISTON_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`; see [Logs](#logs) |
 | `connectorConfigs.apiUrl` | `PISTON_API_URL` | Piston's production | The Piston address the connector connects to; set it only when Piston asks you to |
+| `connectorConfigs.tcp.sendBufferMaxMiB` | `PISTON_TCP_SEND_BUFFER_MAX_MIB` | `16` | 1 to 256. The most a connection may buffer toward the job; see [Performance tuning](#performance-tuning) |
+| `connectorConfigs.tcp.receiveBufferMaxMiB` | `PISTON_TCP_RECEIVE_BUFFER_MAX_MIB` | `16` | 1 to 256. The same for what the job sends |
+| `connectorConfigs.tcp.congestionControl` | `PISTON_TCP_CONGESTION_CONTROL` | `reno` | `reno` or `cubic` |
+| `connectorConfigs.tcp.tunnelQueuePackets` | `PISTON_TUNNEL_QUEUE_PACKETS` | `4096` | 256 to 65536. The packets that may wait to enter the tunnels |
 | | `PISTON_METRICS_LISTEN` | `:9090` | Where the [metrics](#metrics) are served |
 | `networkPolicy.enabled`, `networkPolicy.egress` | | off; `0.0.0.0/0` with no except | An optional NetworkPolicy on the connector's pods; see [A network policy below the rules](#a-network-policy-below-the-rules) |
 | `replicaCount`, `image.*`, `imagePullSecrets`, `serviceAccount.*`, `podAnnotations`, `podLabels`, `podSecurityContext`, `securityContext`, `resources`, `livenessProbe`, `readinessProbe`, `volumes`, `volumeMounts`, `nodeSelector`, `tolerations`, `affinity` | | as `values.yaml` sets them: 2 replicas; the image `ghcr.io/getpiston/piston-connector` at the chart's `appVersion`; 100m CPU and 64 MiB requested, a 1 GiB memory limit | The usual Kubernetes settings, under the names `helm create` gives them |
@@ -177,6 +181,25 @@ change them, are set in the Piston console: **Tunnel addresses**, on the
 network connector's **Advanced** tab. Change them only if they overlap a network a
 job must reach. The console takes a change only while the connector has no
 open tunnel, and every replica then restarts on the new addresses.
+
+## Performance tuning
+
+A job's connection through the connector runs only as fast as the data it may
+keep in flight over the round trip between the job and the connector. Near
+Piston's runners the defaults never limit it. Far from them, at a round trip
+of 100 ms or more, a large download runs at most about half of
+`tcp.sendBufferMaxMiB` per round trip: 16 MiB allows about 30 MB/s at 250 ms.
+A connection starts with small buffers and grows them only as far as it
+needs, so raising a maximum costs nothing on a short round trip.
+
+| Setting | Change it when | What it costs |
+|---|---|---|
+| `tcp.sendBufferMaxMiB` | A download through the tunnel is slower than the same download outside it, and the connector is far from the runners | Memory: a busy connection can hold up to this much. Size `resources.limits.memory` for the transfers you expect at once |
+| `tcp.receiveBufferMaxMiB` | The same for uploads | The same |
+| `tcp.congestionControl` | Transfers over a long round trip drop sharply after a lost packet and take long to recover: try `cubic` | `cubic` keeps more data queued along the path, which can delay other traffic sharing it |
+| `tcp.tunnelQueuePackets` | Fast transfers with large buffers see packets sent again | A full queue delays every tunnel of the instance; give the connector enough CPU rather than a deeper queue |
+
+The `connector_started` line logs the four values an instance runs with.
 
 ## How it works
 
@@ -364,7 +387,7 @@ are an audit log of what every job did through the tunnel. Each has an
 
 | `event` | Written when | Its own fields |
 |---|---|---|
-| `connector_started`, `connector_stopped` | the connector starts, or stops on a signal or an error | `instance_id`, as the console's Instances list shows it; `error` |
+| `connector_started`, `connector_stopped` | the connector starts, or stops on a signal or an error | `instance_id`, as the console's Instances list shows it; on start, `tcp_send_buffer_max_mib`, `tcp_receive_buffer_max_mib`, `tcp_congestion_control`, `tunnel_queue_packets`; `error` |
 | `control_connected`, `control_closed` | its connection to Piston comes up or drops; it reconnects on its own | `error`, `retry_in` |
 | `connector_configured` | the connector takes its tunnel addresses, nameservers and exit node from Piston, at its first connection and whenever the nameservers or the exit node change | `tunnel_range`, `dns_servers`, `exit_node` |
 | `control_unauthorized` | Piston no longer accepts this connector: it was deleted in the console, or recreated with another key; every job's tunnel on it ends | `error`, `retry_in` |
@@ -488,6 +511,7 @@ Look at the job's lines in the log:
 | `control_unauthorized` while jobs run | The connector was deleted in the console | Every tunnel on it ends |
 | A pod `OOMKilled` | Too many live connections for the memory limit; each UDP flow holds about 138 KiB | Raise `resources.limits.memory`, or add replicas |
 | Transfers slower than the network | A CPU limit throttles the connector | No CPU limit, and more replicas for more throughput |
+| Large downloads slower through the tunnel than outside it, with no CPU limit | The round trip between the job and a far connector caps what each connection keeps in flight | Raise `connectorConfigs.tcp.sendBufferMaxMiB`; see [Performance tuning](#performance-tuning) |
 
 ## Rotating the key
 
