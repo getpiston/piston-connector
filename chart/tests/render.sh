@@ -114,11 +114,11 @@ env() {
 }
 env PISTON_TCP_SEND_BUFFER_MAX_MIB 16
 env PISTON_TCP_RECEIVE_BUFFER_MAX_MIB 16
-env PISTON_TCP_CONGESTION_CONTROL reno
+env PISTON_TCP_CONGESTION_CONTROL cubic
 env PISTON_TUNNEL_QUEUE_PACKETS 4096
 env PISTON_TCP_SEND_BUFFER_MAX_MIB 64 --set connectorConfigs.tcp.sendBufferMaxMiB=64
 env PISTON_TCP_RECEIVE_BUFFER_MAX_MIB 32 --set connectorConfigs.tcp.receiveBufferMaxMiB=32
-env PISTON_TCP_CONGESTION_CONTROL cubic --set connectorConfigs.tcp.congestionControl=cubic
+env PISTON_TCP_CONGESTION_CONTROL reno --set connectorConfigs.tcp.congestionControl=reno
 env PISTON_TUNNEL_QUEUE_PACKETS 8192 --set connectorConfigs.tcp.tunnelQueuePackets=8192
 has  "values reused from before 1.3.0 render"     "kind: Deployment" --set connectorConfigs.tcp=null
 

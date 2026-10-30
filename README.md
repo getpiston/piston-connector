@@ -167,8 +167,8 @@ than the newest with **Update Required** and the newest version.
 | `connectorConfigs.apiUrl` | `PISTON_API_URL` | Piston's production | The Piston address the connector connects to; set it only when Piston asks you to |
 | `connectorConfigs.tcp.sendBufferMaxMiB` | `PISTON_TCP_SEND_BUFFER_MAX_MIB` | `16` | 1 to 256. The most a connection may buffer toward the job; see [Performance tuning](#performance-tuning) |
 | `connectorConfigs.tcp.receiveBufferMaxMiB` | `PISTON_TCP_RECEIVE_BUFFER_MAX_MIB` | `16` | 1 to 256. The same for what the job sends |
-| `connectorConfigs.tcp.congestionControl` | `PISTON_TCP_CONGESTION_CONTROL` | `reno` | `reno` or `cubic` |
-| `connectorConfigs.tcp.tunnelQueuePackets` | `PISTON_TUNNEL_QUEUE_PACKETS` | `4096` | 256 to 65536. The packets that may wait to enter the tunnels |
+| `connectorConfigs.tcp.congestionControl` | `PISTON_TCP_CONGESTION_CONTROL` | `cubic` | `cubic` or `reno` |
+| `connectorConfigs.tcp.tunnelQueuePackets` | `PISTON_TUNNEL_QUEUE_PACKETS` | `4096` | 256 to 65536. The packets that may wait to enter the tunnels; when they are full, a connection waits for room |
 | | `PISTON_METRICS_LISTEN` | `:9090` | Where the [metrics](#metrics) are served |
 | `networkPolicy.enabled`, `networkPolicy.egress` | | off; `0.0.0.0/0` with no except | An optional NetworkPolicy on the connector's pods; see [A network policy below the rules](#a-network-policy-below-the-rules) |
 | `replicaCount`, `image.*`, `imagePullSecrets`, `serviceAccount.*`, `podAnnotations`, `podLabels`, `podSecurityContext`, `securityContext`, `resources`, `livenessProbe`, `readinessProbe`, `volumes`, `volumeMounts`, `nodeSelector`, `tolerations`, `affinity` | | as `values.yaml` sets them: 2 replicas; the image `ghcr.io/getpiston/piston-connector` at the chart's `appVersion`; 100m CPU and 64 MiB requested, a 1 GiB memory limit | The usual Kubernetes settings, under the names `helm create` gives them |
@@ -197,8 +197,8 @@ or far, so a maximum is memory each one can hold.
 |---|---|---|
 | `connectorConfigs.tcp.sendBufferMaxMiB` | A download through the tunnel is slower than the same download outside it, and the connector is far from the runners | Memory: each large download in progress holds up to this much. Size `resources.limits.memory` for the transfers you expect at once: 1 GiB holds about 60 at 16 MiB |
 | `connectorConfigs.tcp.receiveBufferMaxMiB` | The same for uploads | The same, for each large upload |
-| `connectorConfigs.tcp.congestionControl` | Transfers over a long round trip drop sharply after a lost packet and take long to recover: try `cubic` | `cubic` keeps more data queued along the path, which can delay other traffic sharing it |
-| `connectorConfigs.tcp.tunnelQueuePackets` | Only together with larger buffers, when fast transfers still fall short | A full queue delays every tunnel of the instance; give the connector enough CPU rather than a deeper queue |
+| `connectorConfigs.tcp.congestionControl` | Other traffic on the path between the jobs and the connector slows while large transfers run: try `reno` | `reno` takes longer to recover from a lost packet over a long round trip |
+| `connectorConfigs.tcp.tunnelQueuePackets` | Rarely: when `piston_connector_tunnel_queue_full_total` climbs during bursts and transfers fall short | A full queue makes every tunnel of the instance wait; give the connector enough CPU rather than a deeper queue |
 
 The `connector_started` line logs the four values an instance runs with.
 
@@ -426,6 +426,9 @@ annotation scrapes them.
 | `piston_connector_tunnels_established` | of those, the ones the job's side has answered |
 | `piston_connector_flows_total{protocol, verdict}` | connections from jobs, by verdict |
 | `piston_connector_dns_answers_total{kind}` | lookups, by answer |
+| `piston_connector_tunnel_queue_full_total` | packets that found the queue into the tunnels full and waited for room |
+| `piston_connector_tcp_retransmitted_segments_total` | TCP segments sent to jobs again, after a loss on the way |
+| `piston_connector_tcp_retransmission_timeouts_total` | times a connection to a job waited out a whole retransmission timeout: a stalled connection |
 
 ## Troubleshooting
 
