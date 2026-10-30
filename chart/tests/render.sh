@@ -107,5 +107,11 @@ has  "affinity passes through"                    "podAntiAffinity:" \
 has  "resources default"                          "memory: 1Gi"
 has  "log level default"                          'value: "info"'
 has  "log level passes through"                   'value: "debug"' --set "connectorConfigs.logLevel=debug"
+t "the tuning defaults reach the connector"
+out="$(render)"
+if grep -qF 'name: PISTON_TCP_SEND_BUFFER_MAX_MIB' <<<"$out" && grep -qF 'value: "16"' <<<"$out" &&
+  grep -qF 'value: "reno"' <<<"$out" && grep -qF 'value: "4096"' <<<"$out"; then ok; else no; fi
+has  "a send buffer maximum passes through"       'value: "64"' --set "connectorConfigs.tcp.sendBufferMaxMiB=64"
+has  "congestion control passes through"          'value: "cubic"' --set "connectorConfigs.tcp.congestionControl=cubic"
 
 exit "$rc"

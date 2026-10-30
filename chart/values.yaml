@@ -103,3 +103,24 @@ connectorConfigs:
   ## The Piston control plane the connector talks to. Empty is Piston's
   ## production, which the image defaults to; set it only when Piston says so.
   apiUrl: ""
+
+  ## How the connector carries each connection of a job. A connection runs
+  ## only as fast as the data it may keep in flight over the round trip
+  ## between the job and the connector, so these matter for a connector far
+  ## from Piston's runners and not for one near them. The README's Performance
+  ## tuning section says when to change each.
+  tcp:
+    ## The most each connection may buffer toward the job, in MiB, 1 to 256: a
+    ## download runs at most about half of it per round trip. A connection
+    ## starts small and grows only as far as it needs, but a busy one can hold
+    ## this much memory.
+    sendBufferMaxMiB: 16
+    ## The same for what the job sends through the connector: uploads.
+    receiveBufferMaxMiB: 16
+    ## How a connection slows down after a lost packet and speeds up again:
+    ## reno, or cubic, which recovers sooner over a long round trip.
+    congestionControl: reno
+    ## How many packets may wait to enter the tunnels during a burst, 256 to
+    ## 65536, one queue for all of an instance's tunnels. Beyond it packets are
+    ## dropped and sent again, which slows a fast transfer.
+    tunnelQueuePackets: 4096
