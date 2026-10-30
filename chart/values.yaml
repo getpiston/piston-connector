@@ -48,7 +48,8 @@ resources:
   requests:
     cpu: 100m
     memory: 64Mi
-  ## Each live UDP flow holds about 138 KiB, so 1 GiB carries some 7,000 at once.
+  ## Each live UDP flow holds about 138 KiB, so 1 GiB carries some 7,000 at once;
+  ## each large TCP transfer holds up to its connectorConfigs.tcp buffer maximum.
   limits:
     memory: 1Gi
 
@@ -110,12 +111,12 @@ connectorConfigs:
   ## from Piston's runners and not for one near them. The README's Performance
   ## tuning section says when to change each.
   tcp:
-    ## The most each connection may buffer toward the job, in MiB, 1 to 256: a
-    ## download runs at most about half of it per round trip. A connection
-    ## starts small and grows only as far as it needs, but a busy one can hold
-    ## this much memory.
+    ## The most each connection may buffer toward the job, in MiB, 1 to 256:
+    ## what a download keeps in flight. Every large download grows its buffer
+    ## to this, near or far, so it is memory each one can hold.
     sendBufferMaxMiB: 16
-    ## The same for what the job sends through the connector: uploads.
+    ## The same for what the job sends through the connector: an upload keeps
+    ## up to half of it in flight.
     receiveBufferMaxMiB: 16
     ## How a connection slows down after a lost packet and speeds up again:
     ## reno, or cubic, which recovers sooner over a long round trip.

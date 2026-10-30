@@ -142,12 +142,12 @@ helm install piston-connector oci://ghcr.io/getpiston/charts/piston-connector \
 
 ```sh
 helm upgrade piston-connector oci://ghcr.io/getpiston/charts/piston-connector \
-  --namespace piston-connector --reuse-values
+  --namespace piston-connector --reset-then-reuse-values
 ```
 
-This moves to the newest chart, and so to its connector image, and keeps the
-settings you installed with; with a values file, pass `-f values.yaml` in
-place of `--reuse-values`. With Docker, remove the container
+This moves to the newest chart, and so to its connector image, takes its new
+defaults and keeps the settings you installed with (Helm 3.14 or later); with
+a values file, pass `-f values.yaml` in place of `--reset-then-reuse-values`. With Docker, remove the container
 (`docker rm -f piston-connector`) and run its line again with the new
 version. A replica that is replaced cuts its jobs' open connections, and
 Piston moves their tunnels to a replica still running within two minutes, so
@@ -185,19 +185,20 @@ open tunnel, and every replica then restarts on the new addresses.
 ## Performance tuning
 
 A job's connection through the connector runs only as fast as the data it may
-keep in flight over the round trip between the job and the connector. Near
-Piston's runners the defaults never limit it. Far from them, at a round trip
-of 100 ms or more, a large download runs at most about half of
-`tcp.sendBufferMaxMiB` per round trip: 16 MiB allows about 30 MB/s at 250 ms.
-A connection starts with small buffers and grows them only as far as it
-needs, so raising a maximum costs nothing on a short round trip.
+keep in flight over the round trip between the job and the connector. A
+download keeps up to `connectorConfigs.tcp.sendBufferMaxMiB` in flight and an
+upload up to half of `connectorConfigs.tcp.receiveBufferMaxMiB`; the job's own
+machine can cap a connection lower. Near Piston's runners the round trip is
+short and the defaults rarely limit a transfer; at 100 ms or more they decide a
+large one's speed. Every large transfer grows its buffer to the maximum, near
+or far, so a maximum is memory each one can hold.
 
 | Setting | Change it when | What it costs |
 |---|---|---|
-| `tcp.sendBufferMaxMiB` | A download through the tunnel is slower than the same download outside it, and the connector is far from the runners | Memory: a busy connection can hold up to this much. Size `resources.limits.memory` for the transfers you expect at once |
-| `tcp.receiveBufferMaxMiB` | The same for uploads | The same |
-| `tcp.congestionControl` | Transfers over a long round trip drop sharply after a lost packet and take long to recover: try `cubic` | `cubic` keeps more data queued along the path, which can delay other traffic sharing it |
-| `tcp.tunnelQueuePackets` | Fast transfers with large buffers see packets sent again | A full queue delays every tunnel of the instance; give the connector enough CPU rather than a deeper queue |
+| `connectorConfigs.tcp.sendBufferMaxMiB` | A download through the tunnel is slower than the same download outside it, and the connector is far from the runners | Memory: each large download in progress holds up to this much. Size `resources.limits.memory` for the transfers you expect at once: 1 GiB holds about 60 at 16 MiB |
+| `connectorConfigs.tcp.receiveBufferMaxMiB` | The same for uploads | The same, for each large upload |
+| `connectorConfigs.tcp.congestionControl` | Transfers over a long round trip drop sharply after a lost packet and take long to recover: try `cubic` | `cubic` keeps more data queued along the path, which can delay other traffic sharing it |
+| `connectorConfigs.tcp.tunnelQueuePackets` | Only together with larger buffers, when fast transfers still fall short | A full queue delays every tunnel of the instance; give the connector enough CPU rather than a deeper queue |
 
 The `connector_started` line logs the four values an instance runs with.
 
@@ -387,7 +388,7 @@ are an audit log of what every job did through the tunnel. Each has an
 
 | `event` | Written when | Its own fields |
 |---|---|---|
-| `connector_started`, `connector_stopped` | the connector starts, or stops on a signal or an error | `instance_id`, as the console's Instances list shows it; on start, `tcp_send_buffer_max_mib`, `tcp_receive_buffer_max_mib`, `tcp_congestion_control`, `tunnel_queue_packets`; `error` |
+| `connector_started`, `connector_stopped` | the connector starts, or stops on a signal or an error | `instance_id`, as the console's Instances list shows it; on start, `version`, `log_level`, `api`, `tcp_send_buffer_max_mib`, `tcp_receive_buffer_max_mib`, `tcp_congestion_control`, `tunnel_queue_packets`; `error` |
 | `control_connected`, `control_closed` | its connection to Piston comes up or drops; it reconnects on its own | `error`, `retry_in` |
 | `connector_configured` | the connector takes its tunnel addresses, nameservers and exit node from Piston, at its first connection and whenever the nameservers or the exit node change | `tunnel_range`, `dns_servers`, `exit_node` |
 | `control_unauthorized` | Piston no longer accepts this connector: it was deleted in the console, or recreated with another key; every job's tunnel on it ends | `error`, `retry_in` |
@@ -461,6 +462,8 @@ are fixed.
 | `/etc/resolv.conf names no nameserver` | Give the container a DNS server: Docker's `--dns`, or the pod's `dnsConfig` |
 | `PISTON_LOG_LEVEL "…" is none of debug, info, warn and error` | One of those |
 | `PISTON_API_URL: "…" is not an http or https URL` | Leave it unset unless Piston gave you another |
+| `PISTON_TCP_… "…" is not a whole number from 1 to 256`, or `PISTON_TUNNEL_QUEUE_PACKETS "…" is not a whole number from 256 to 65536` | A whole number in that range, or leave it unset for the default |
+| `PISTON_TCP_CONGESTION_CONTROL "…" is neither reno nor cubic` | One of those |
 
 A `connector_stopped` line saying `the tunnel range changed from … to …; the
 connector restarts to take it` follows a change of **Tunnel addresses** and is
@@ -509,7 +512,7 @@ Look at the job's lines in the log:
 | `tunnel_closed` with the `reason` `shutdown` on one instance, then `tunnel_opened` for the same `runner_public_key` on another | The instance stopped: an upgrade, a node drain, a restart | Expected: connections open at that moment fail. Run two or more replicas, and let jobs retry a failed connection |
 | `tunnel_closed` with the `reason` `silent` | The job's side stopped answering for 3 minutes | Usual for a job that ended while the rest of its run goes on |
 | `control_unauthorized` while jobs run | The connector was deleted in the console | Every tunnel on it ends |
-| A pod `OOMKilled` | Too many live connections for the memory limit; each UDP flow holds about 138 KiB | Raise `resources.limits.memory`, or add replicas |
+| A pod `OOMKilled` | Too many live connections for the memory limit; each UDP flow holds about 138 KiB, and each large TCP transfer up to its `connectorConfigs.tcp` buffer maximum | Raise `resources.limits.memory`, lower the buffer maximums, or add replicas |
 | Transfers slower than the network | A CPU limit throttles the connector | No CPU limit, and more replicas for more throughput |
 | Large downloads slower through the tunnel than outside it, with no CPU limit | The round trip between the job and a far connector caps what each connection keeps in flight | Raise `connectorConfigs.tcp.sendBufferMaxMiB`; see [Performance tuning](#performance-tuning) |
 
