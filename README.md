@@ -197,7 +197,7 @@ or far, so a maximum is memory each one can hold.
 |---|---|---|
 | `connectorConfigs.tcp.sendBufferMaxMiB` | A download through the tunnel is slower than the same download outside it, and the connector is far from the runners | Memory: each large download in progress holds up to this much. Size `resources.limits.memory` for the transfers you expect at once: 1 GiB holds about 60 at 16 MiB |
 | `connectorConfigs.tcp.receiveBufferMaxMiB` | The same for uploads | The same, for each large upload |
-| `connectorConfigs.tcp.congestionControl` | Leave it at `reno` | `cubic` resends data the job already has over a long round trip, which slows downloads |
+| `connectorConfigs.tcp.congestionControl` | Leave it at `reno` | `cubic` has been measured only on connector 1.4.1, where it resent data the job already had over a long round trip and slowed downloads |
 | `connectorConfigs.tcp.tunnelQueuePackets` | Rarely: when `piston_connector_tunnel_queue_full_total` climbs during bursts and transfers fall short | A full queue makes every tunnel of the instance wait; give the connector enough CPU rather than a deeper queue |
 
 The `connector_started` line logs the four values an instance runs with.
