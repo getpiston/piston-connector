@@ -167,7 +167,7 @@ than the newest with **Update Required** and the newest version.
 | `connectorConfigs.apiUrl` | `PISTON_API_URL` | Piston's production | The Piston address the connector connects to; set it only when Piston asks you to |
 | `connectorConfigs.tcp.sendBufferMaxMiB` | `PISTON_TCP_SEND_BUFFER_MAX_MIB` | `16` | 1 to 256. The most a connection may buffer toward the job; see [Performance tuning](#performance-tuning) |
 | `connectorConfigs.tcp.receiveBufferMaxMiB` | `PISTON_TCP_RECEIVE_BUFFER_MAX_MIB` | `16` | 1 to 256. The same for what the job sends |
-| `connectorConfigs.tcp.congestionControl` | `PISTON_TCP_CONGESTION_CONTROL` | `reno` | `reno` or `cubic` |
+| `connectorConfigs.tcp.congestionControl` | `PISTON_TCP_CONGESTION_CONTROL` | `cubic` with Helm, `reno` in the image alone | `cubic` or `reno` |
 | `connectorConfigs.tcp.tunnelQueuePackets` | `PISTON_TUNNEL_QUEUE_PACKETS` | `4096` | 256 to 65536. The packets that may wait to enter the tunnels; when they are full, a connection waits for room |
 | | `PISTON_METRICS_LISTEN` | `:9090` | Where the [metrics](#metrics) are served |
 | `networkPolicy.enabled`, `networkPolicy.egress` | | off; `0.0.0.0/0` with no except | An optional NetworkPolicy on the connector's pods; see [A network policy below the rules](#a-network-policy-below-the-rules) |
@@ -197,7 +197,7 @@ or far, so a maximum is memory each one can hold.
 |---|---|---|
 | `connectorConfigs.tcp.sendBufferMaxMiB` | A download through the tunnel is slower than the same download outside it, and the connector is far from the runners | Memory: each large download in progress holds up to this much. Size `resources.limits.memory` for the transfers you expect at once: 1 GiB holds about 60 at 16 MiB |
 | `connectorConfigs.tcp.receiveBufferMaxMiB` | The same for uploads | The same, for each large upload |
-| `connectorConfigs.tcp.congestionControl` | Leave it at `reno` | `cubic` has been measured only on connector 1.4.1, where it resent data the job already had over a long round trip and slowed downloads |
+| `connectorConfigs.tcp.congestionControl` | Leave it at `cubic`. With `docker run`, set `PISTON_TCP_CONGESTION_CONTROL=cubic`: the image alone runs `reno` | `reno` regrows its sending rate slowly after a lost packet over a long round trip, which slows parallel downloads |
 | `connectorConfigs.tcp.tunnelQueuePackets` | Rarely: when `piston_connector_tunnel_queue_full_total` climbs during bursts and transfers fall short | A full queue makes every tunnel of the instance wait; give the connector enough CPU rather than a deeper queue |
 
 The `connector_started` line logs the four values an instance runs with.
