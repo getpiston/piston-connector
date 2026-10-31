@@ -119,8 +119,9 @@ connectorConfigs:
     ## up to half of it in flight.
     receiveBufferMaxMiB: 16
     ## How a connection slows down after a lost packet and speeds up again:
-    ## cubic, which recovers sooner over a long round trip, or reno.
-    congestionControl: cubic
+    ## reno, or cubic, which on connector 1.4.1 resent data needlessly over a
+    ## long round trip.
+    congestionControl: reno
     ## How many packets may wait to enter the tunnels during a burst, 256 to
     ## 65536, one queue for all of an instance's tunnels. When it is full, a
     ## connection waits for room instead of losing packets.
