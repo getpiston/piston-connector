@@ -6,6 +6,11 @@ You run one small container in that network. It connects to Piston, and it
 holds each job to the routing rules you write in the Piston console: a job
 reaches what they grant and nothing else.
 
+A connector is configured in two places. Where you install it sets what it
+runs with: see [Settings](#settings). The [Piston console](#the-console) sets
+what jobs may do through it: its routing rules, nameservers, exit node and
+tunnel addresses.
+
 ## Quick start with Docker
 
 The shortest path, for a quick trial or a single host. For a cluster, the
@@ -41,13 +46,15 @@ next section, [Kubernetes with Helm](#kubernetes-with-helm), is the way.
    `docker logs piston-connector` says why (see
    [Troubleshooting](#troubleshooting)).
 
-4. **Write a routing rule.** On the connector's **Settings** tab, add a
-   routing rule: its **Name**, unique on the connector, its **Job matchers**,
-   which jobs may connect, and its **Authorized resources**, what they reach.
-   For example, a rule `api-db` lets jobs of `acme-inc/api` reach the hostname
-   `db.internal`. A connector with no routing rule admits no job. Above them,
-   **Configure Connector** holds the **Nameservers**, which of your DNS servers
-   answer which domains, and the **Exit node** switch. See [Routing rules](#routing-rules) and [Nameservers](#nameservers).
+4. **Write a routing rule.** On the connector's **Settings** tab, choose **Add
+   routing rule** and fill in its **Name**, unique on the connector, its **Job
+   matchers**, which jobs may connect, and its **Authorized resources**, what
+   they reach. **Add** asks you to confirm, then saves it. For example, a rule
+   `api-db` lets jobs of `acme-inc/api` reach the hostname `db.internal`. A
+   connector with no routing rule admits no job. Above them, **Configure
+   Connector** holds the **Nameservers**, which of your DNS servers answer which
+   domains, and the **Exit node** switch. See [The console](#the-console),
+   [Routing rules](#routing-rules) and [Nameservers](#nameservers).
 
 5. **Open the tunnel from a job.** Add the `getpiston/tunnel-action` step,
    with the connector's name, before the steps that need your network:
@@ -287,14 +294,128 @@ ranges cover destinations outside the cluster: Cilium and GKE Dataplane V2
 never match a pod, a node or a Service to a range, so there a connector whose
 rules grant in-cluster names cannot reach them with the policy on.
 
+## The console
+
+What jobs may do through a connector is set in the Piston console, at
+[app.piston.sh/runners/connectors](https://app.piston.sh/runners/connectors):
+**Runners → Network connectors** in its menu. Anyone in your organization can
+read these pages. Only someone with the owner role can change them; for anyone
+else the controls are gone or disabled, with **Requires the owner role**, and
+the bar at the bottom of the page says **Read-only**.
+
+| To | Go to | Do |
+|---|---|---|
+| Create a connector | **Network connectors** | **New network connector**; see [Creating a connector](#creating-a-connector) |
+| See whether it is running | Its **General** tab | **Instances** |
+| See which jobs used it | Its **General** tab | **Tunnels history** |
+| Add a routing rule | Its **Settings** tab, **Routing rules** | **Add routing rule**, fill it in, **Add**, then **Add** to confirm |
+| Change a routing rule | Its **Settings** tab, **Routing rules** | Click its row, change it, **Update**, then **Update** to confirm |
+| Delete a routing rule | Its **Settings** tab, **Routing rules** | The trash icon at the end of its row, then **Delete** to confirm |
+| Add a nameserver entry | Its **Settings** tab, **Nameservers** | **Add entry**, fill it in, **Add**, then **Add** to confirm |
+| Change a nameserver entry | Its **Settings** tab, **Nameservers** | Click its row, change it, **Update**, then **Update** to confirm |
+| Delete a nameserver entry | Its **Settings** tab, **Nameservers** | The trash icon at the end of its row, then **Delete** to confirm |
+| Turn the exit node on or off | Its **Settings** tab, **Configure Connector** | The **Exit node** switch, then **Turn on** or **Turn off** to confirm |
+| Change the tunnel addresses | Its **Advanced** tab | **Address range**, then **Save tunnel addresses** |
+| Delete the connector | The top of its page, on any tab | The trash icon, then **Delete** to confirm |
+
+### Creating a connector
+
+**New network connector** asks for two things:
+
+- **Name**: 1 to 63 letters, digits, hyphens or underscores, starting with a
+  letter or a digit. It is unique in your organization and cannot be changed
+  later. A workflow gives it as the step's `connector_name`.
+- **Public key**: optional. Leave it empty and your browser makes the key. To
+  make it yourself, see [Your own key](#your-own-key).
+
+**Create** moves to **Install** and the connector's name: the private key, if
+your browser made it, and the install line, with a switch between **Docker**
+and **Kubernetes**. The private key is shown once, so copy it before you leave:
+**Go to the network connector**, or a click outside the dialog, closes it. A
+lost key means a new connector; see [Rotating the key](#rotating-the-key).
+
+### The list of connectors
+
+**Connected** lists the connectors with an instance online. **Not connected**
+lists the rest, and no job can open a tunnel to those yet. Each card shows how
+many routing rules and online instances the connector has, what its rules
+authorize, and its open tunnels. An orange mark beside a name means the
+connector is an exit node. **Update Required** means one of its instances runs
+an older release than the newest; see [Upgrading](#upgrading).
+
+### The General tab
+
+This tab only shows things, and nothing on it can be changed:
+
+- **Name** and **Public key**.
+- **Instances**: every copy of the connector you run, by **Status**, **Version**,
+  **Address**, the address it reaches Piston from, **Connected** and **Last seen**.
+  An instance is **Online** while it is connected and heard from within the
+  last minute. Offline instances are folded under **Show N offline instances**.
+  Every restart starts a new instance and leaves the old one offline, where it
+  stays for 30 days, so offline rows beside online ones are no fault.
+- **Tunnels history**: the last 50 tunnels, newest first, by **Repository**,
+  **Run**, **Environment**, **Branch**, **Started by** and **Tunnel address**, the
+  job's address in the tunnel. A closed tunnel stays for 30 days.
+  - **Established** says when the tunnel came up, **Waiting** while it is
+    coming up, or **Never** if it closed first.
+  - **Closed** says **Open**, or when it closed, usually with a reason:
+
+| Reason | Means |
+|---|---|
+| **The run finished** | The job's workflow run completed |
+| **The job stopped answering** | The job's side went silent, usually because the job ended while the rest of its run went on |
+| **The network connector could not reach the job** | The tunnel never came up; see [The tunnel step fails](#the-tunnel-step-fails) |
+| **The tunnel reached its 6-hour limit** | Piston closed it after 6 hours |
+
+### The Settings tab
+
+Nothing on this tab has a Save button. Each change opens a dialog that says what
+it will do, and saves as soon as you confirm. **Cancel** changes nothing and
+keeps what you typed. A refused change says why in that dialog; see
+[The console refuses a change](#the-console-refuses-a-change).
+
+- **Configure Connector** holds the **Exit node** switch, with its help listing
+  the addresses online instances reach Piston from, and the **Nameservers**
+  table. See [Exit node](#exit-node) and [Nameservers](#nameservers).
+- **Routing rules** lists each rule's name, job matchers and authorized
+  resources. See [Routing rules](#routing-rules).
+
+### The Advanced tab
+
+**Tunnel addresses** holds the **Address range**, `100.127.0.0/16` unless it was
+changed. Change it only if it overlaps a network a job must reach, or your
+security rules require another. It must be `/19` or larger, written as its first
+address and a size, and it has its own **Save tunnel addresses** button, which
+asks nothing first. The console takes a change only while the connector has no
+open tunnel, and saving it restarts every instance.
+
+### Deleting a connector
+
+The trash icon at the top of the connector's page asks first. Its open tunnels
+close, its instances are disconnected, and no job can open a tunnel to it again.
+Uninstall the connector as well: its instances keep retrying and log
+`control_unauthorized`.
+
+### When a change applies
+
+| Change | Applies | A job already running |
+|---|---|---|
+| Routing rules | To the next tunnel | Keeps what it can reach until the instance it uses stops |
+| Nameservers | On every instance within 20 seconds, without a restart | Keeps the domains it started with |
+| Exit node | On every instance within 20 seconds | When it is turned off, a job using it loses its public internet traffic, unless a routing rule grants it |
+| Tunnel addresses | Every instance restarts on the new addresses | None can be: the console refuses the change while a tunnel is open |
+
 ## Routing rules
 
 What a job reaches is written in the Piston console, not here. A network
-connector's routing rules are on its **Settings** tab. Each has a name,
-unique on the connector, and says two things: **Job matchers**, which jobs
-the rule admits, and **Authorized resources**, what those jobs reach. Each of
-Repositories, Environments and Branches you fill in must match the job, and a
-list left empty matches any; `*` matches any text, and case does not matter.
+connector's routing rules are on its **Settings** tab. Each has a name, up to
+64 characters and unique on the connector, and says two things: **Job matchers**,
+which jobs the rule admits, and **Authorized resources**, what those jobs reach.
+A rule needs at least one of each. Each of Repositories, Environments and
+Branches you fill in must match the job, and a list left empty matches any; `*`
+matches any text, and case does not matter. In the rule's dialog each list takes
+one value a row, added with its own button, such as **+ Add repository**.
 
 A job may connect when any rule's job matchers match it, and it reaches the
 authorized resources of every rule that matches it, together. Rules only add: there is no
@@ -309,7 +430,7 @@ sends through the tunnel is refused.
 
 | Authorized resource | Example | What a matching job gets |
 |---|---|---|
-| Network CIDRs | `10.20.0.0/16`, the addresses of your VPC | every address in the range, reached by address. A range is its first address and a size: `/16` is the 65,536 addresses from `10.20.0.0` to `10.20.255.255`, `/32` one address. IPv4 only |
+| Network CIDRs | `10.20.0.0/16`, the addresses of your VPC | every address in the range, reached by address. A range is its first address and a size: `/16` is the 65,536 addresses from `10.20.0.0` to `10.20.255.255`, `/32` one address, and `10.20.1.5/16` is refused because `10.20.1.5` is not the first address. IPv4 only |
 | Hostname matchers | `postgres.data.svc.cluster.local`, your Postgres Service; `*.kafka.internal` | those hosts, by name: an exact name, or `*.x` for `x` and every name under it. The connector looks the name up in your network, so the job needs no matching network CIDR |
 
 **Grant the narrowest resources a job needs.** A new rule starts empty.
@@ -324,9 +445,10 @@ TCP and UDP work through the tunnel; `ping` does not. A job reaches its
 runner's own addresses, Docker's `172.17.0.0/16` among them, on the runner,
 never through the tunnel, whatever its Network CIDRs hold.
 
-A tunnel keeps the authorized resources it opened with: an edit of the
-routing rules applies to the tunnels opened after it, so re-run a job to try
-an edit.
+A tunnel keeps the authorized resources it opened with until its instance
+stops: an edit of the routing rules applies to the tunnels opened after it, and
+to a tunnel Piston moves to another instance after it. Re-run a job to try an
+edit.
 
 ## Exit node
 
@@ -362,9 +484,11 @@ jobs already using it.
 
 Which of your DNS servers answer which names is set in the Piston console
 too, on the connector's **Settings** tab, as the **Nameservers** under **Configure Connector**.
-Each entry has a name, up to 3 nameservers, each an IP address and the port it
-answers on, 53 unless your server uses another, and its match domains, such as
-`corp.internal`. A lookup goes to the entry with the most specific domain that
+**Add entry** opens an entry's dialog. It takes a name, up to 64 characters and
+unique on the connector, up to 3 nameservers with **+ Add nameserver**, each an
+IP address and the port it answers on, 53 unless your server uses another, tried
+in order, and its match domains with **+ Add domain**, such as `corp.internal`.
+A domain belongs to one entry. A lookup goes to the entry with the most specific domain that
 covers the name. `.`, shown as ALL, answers every name no other entry covers,
 a hostname matcher's among them; without one, those go to the DNS of the
 machine or cluster the connector runs on.
@@ -432,8 +556,9 @@ annotation scrapes them.
 
 ## Troubleshooting
 
-A failure shows in one of three places: the job's tunnel step, the console's
-**Instances** list, or the connector's log. The
+A failure shows in one of four places: the job's tunnel step, the console's
+**Instances** list, the connector's log, or a change the
+[console refuses](#the-console-refuses-a-change). The
 [tunnel step's guide](https://github.com/getpiston/tunnel-action#when-the-step-fails)
 lists every message the step fails with. A job's log lines carry its
 `repository` and its `gh_run_id`, the number in the run's GitHub URL:
@@ -518,6 +643,28 @@ Look at the job's lines in the log:
 | A pod `OOMKilled` | Too many live connections for the memory limit; each UDP flow holds about 138 KiB, and each large TCP transfer up to its `connectorConfigs.tcp` buffer maximum | Raise `resources.limits.memory`, lower the buffer maximums, or add replicas |
 | Transfers slower than the network | A CPU limit throttles the connector | No CPU limit, and more replicas for more throughput |
 | Large downloads slower through the tunnel than outside it, with no CPU limit | The round trip between the job and a far connector caps what each connection keeps in flight | Raise `connectorConfigs.tcp.sendBufferMaxMiB`; see [Performance tuning](#performance-tuning) |
+
+### The console refuses a change
+
+| The console says | Why | Fix |
+|---|---|---|
+| `Requires the owner role`, on a disabled control | Your role in the organization is not owner | Ask an owner to make the change |
+| `A name is 1 to 63 letters, digits, hyphens or underscores, starting with a letter or a digit.` | The connector's name has another character, or starts with a hyphen or an underscore | A name of that form |
+| `This organization already has a network connector of this name.` | Names are unique in an organization | Another name |
+| `This does not look like a public key, which is 44 characters ending in =.` | The field holds something other than a whole key | The whole public half, or leave the field empty |
+| `Another network connector of this organization holds this public key; each needs a key of its own.` | The key is already in use | A new key |
+| `Give the routing rule a name.`, `Another routing rule is already named <name>.` | A rule needs a name of its own on the connector | Another name |
+| `Fill in at least one job matcher: …` | Repositories, Environments and Branches are all empty | Fill in one; `*` in Repositories matches every repository |
+| `Fill in at least one authorized resource: …` | Network CIDRs and Hostname matchers are both empty | Fill in one |
+| `<value> is not a valid network CIDR. …` | It is not an IPv4 range written as its first address and a size | A range such as `10.30.0.0/24`, or `10.30.0.5/32` for one address |
+| `<value> is not a hostname matcher such as db.internal or *.kafka.internal.` | It is not a name, or has a `*` anywhere but a leading `*.` | An exact name, or `*.x` |
+| `Give the entry a name.`, `Another entry is already named <name>.` | An entry needs a name of its own on the connector | Another name |
+| `Add at least one nameserver.`, `Use at most 3 nameservers.` | An entry holds 1 to 3 nameservers | Add one, or remove some |
+| `<value> is not an IP address such as 10.20.0.2.`, `<value> is not a port from 1 to 65535.`, `<value> is in the list twice.` | A nameserver is an IP address and a port, once | Correct the row; a nameserver cannot be a hostname |
+| `Add at least one match domain, …`, `<value> is not a domain such as corp.internal, or a single dot.` | An entry needs a domain, or `.` | A domain such as `corp.internal`, with no `*` |
+| `<domain> is already in another entry.` | A domain belongs to one entry | Remove it from the other entry first, or add the nameserver there |
+| `<value> is not a valid IP range. …`, `<value> is too small. Tunnel addresses need a range of /19 or larger, …` | The tunnel addresses are not a range of `/19` or larger, written as its first address and a size | A range such as `100.127.0.0/16` |
+| `Jobs are using this network connector. Change the tunnel addresses once none are running.` | A tunnel is open, and a change restarts every instance | Try again once the jobs finish; **Tunnels history** shows which are **Open** |
 
 ## Rotating the key
 
