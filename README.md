@@ -522,7 +522,7 @@ are an audit log of what every job did through the tunnel. Each has an
 | `tunnel_opened`, `tunnel_established`, `tunnel_closed` | a job is assigned to this connector, its tunnel comes up, and it ends | `runner_public_key`, `runner_endpoint`, `authorized_resources`; `reason` and `connections` on the close |
 | `tunnel_authorized_resources_changed` | Piston sent a job's tunnel again under different routing rules | `authorized_resources` |
 | `connection_opened`, `connection_closed` | a connection from the job to a destination, and its end | `connection_id`, `protocol`, `source`, `destination`, `verdict`, `dialed`; `duration_ms`, `bytes_to_destination` and `bytes_to_runner` on the close |
-| `connection_denied`, `connection_failed` | a connection the rules do not grant, or one the destination did not answer | the same, `verdict`; `error` |
+| `connection_denied`, `connection_failed` | a connection the rules do not grant or whose hostname did not resolve, or one the destination did not answer | the same, `verdict`; `error` |
 | `lookup_allowed`, `lookup_forwarded`, `lookup_denied`, `lookup_failed` | a name the job looked up: granted by a rule, passed to your nameservers unchanged, refused, or unanswered | `name`, `type`, `answer` |
 
 A connection's `destination` is what the job asked for, a hostname or an
@@ -570,6 +570,9 @@ lists every message the step fails with. A job's log lines carry its
 docker logs piston-connector
 kubectl -n piston-connector logs -l app.kubernetes.io/name=piston-connector --prefix --tail=500
 ```
+
+When the tunnel connected but the job still cannot reach a service, see
+[How to debug a job that cannot reach a service](#how-to-debug-a-job-that-cannot-reach-a-service).
 
 ### The connector does not start
 
@@ -622,19 +625,55 @@ fix to the network takes effect without a restart.
 | `every tunnel address of the connector is in use` | A connector holds about 4,000 open tunnels, whatever its **Tunnel addresses** | Fewer jobs at once, or a second connector |
 | `the connector is not an exit node` | The step sets `exit_node: true`, a routing rule admits the job, and the connector's **Exit node** is off | Turn it on under **Configure Connector** in the console, or drop `exit_node` from the step |
 
-### The job cannot reach a service
+### How to debug a job that cannot reach a service
 
-The step printed the rules that matched, yet a connection from the job fails.
-Look at the job's lines in the log:
+Start here when the tunnel step passed and printed the rules and routes you
+expected, yet a connection from the job still fails. The connector writes a line
+for every lookup and connection a job makes through the tunnel, at the default
+log level, so its log says what happened to each one.
+
+1. **Find the run's id.** It is the number after `/runs/` in the run's GitHub
+   URL. A re-run keeps the id; `gh_run_attempt` tells its attempts apart.
+
+2. **Search the log for the run's failures:** DNS resolution failures and
+   rejected connections. A tunnel can be on any instance, so search them all.
+   Keep `--tail=-1`: with a selector, `kubectl logs` otherwise shows only each
+   pod's last 10 lines.
+
+   ```sh
+   kubectl -n piston-connector logs -l app.kubernetes.io/name=piston-connector --tail=-1 \
+     | grep '"gh_run_id":<run id>' \
+     | grep -E '"event":"(lookup_denied|lookup_failed|connection_denied|connection_failed)"'
+   ```
+
+   With Docker, start from `docker logs piston-connector` on each machine that
+   runs it. A lookup's line names what the job asked for in `name`, and a
+   connection's in `destination`, with its `verdict` and any `error`.
+
+3. **If that finds nothing, search for the service itself,** by its name or
+   address, in the same way:
+
+   ```sh
+   kubectl -n piston-connector logs -l app.kubernetes.io/name=piston-connector --tail=-1 \
+     | grep '"gh_run_id":<run id>' \
+     | grep '<name or address>'
+   ```
+
+4. **Look up what you found:**
 
 | The log shows | Cause | Fix |
 |---|---|---|
-| `connection_denied`, `verdict` `deny` | No rule the job matched grants that `destination`, and the exit node does not reach it: it is off, or the address is private | Add it to a rule's Network CIDRs or Hostname matchers, then re-run the job: an addition reaches only tunnels opened after it |
 | `lookup_denied` | The job looked up a name that reached the connector, but no rule it matched grants | Add the name to a rule's Hostname matchers, or its domain to the nameservers' match domains |
-| `connection_failed`, `verdict` `unresolved` | The connector's nameservers do not know the name | Add an entry under **Nameservers**, in **Configure Connector**, for the name's domain, with DNS servers that resolve it |
-| `lookup_failed` | The connector's nameservers did not answer | Check the connector reaches them |
-| `connection_failed`, `verdict` `dial_failed` | The connector could not connect to the destination | The service is down, or a firewall, a security group or the chart's network policy stops the connector. Try the same connection from where the connector runs |
-| Nothing for that destination | The connection never took the tunnel | Its address is outside the matched rules' Network CIDRs, and its name outside their Hostname matchers and the nameservers' match domains, so it left the runner as usual. A name under DNS domains alone resolves to its real address, which a Network must hold. Docker's `172.17.0.0/16`, IPv6 and `ping` never take the tunnel |
+| `lookup_failed` | The connector's nameservers did not answer, or have no such name | Check the connector reaches them and they know the name. A name under no entry goes to the DNS of the machine or cluster the connector runs on: add an entry under **Nameservers**, in **Configure Connector**, for its domain |
+| `connection_denied`, `verdict` `unresolved` | The job connected to a hostname matcher's name, and the connector could not look its address up again | As for `lookup_failed` |
+| `lookup_forwarded`, yet the job says the name does not resolve | Your nameserver's answer went to the job unchanged, and this line does not record it | Ask that nameserver for the name from where the connector runs |
+| `connection_denied`, `verdict` `deny` | No rule the job matched grants that `destination`, and the exit node does not reach it: it is off, or the address is private | Add it to a rule's Network CIDRs or Hostname matchers, then re-run the job: an addition reaches only tunnels opened after it |
+| `connection_failed`, `verdict` `dial_failed` | The connector could not connect to the destination; `error` says why | The service is down, or a firewall, a security group or the chart's network policy stops the connector. Try the same connection from where the connector runs |
+| `connection_opened`, then `connection_closed` | The connector reached the service, so the failure is past it | Check the service's own logs, credentials and TLS. A `bytes_to_runner` of 0 means the service sent nothing back |
+| Nothing for that destination | The connection never took the tunnel | Its address is outside the matched rules' Network CIDRs, and its name outside their Hostname matchers and the nameservers' match domains, so it left the runner as usual. A name under match domains alone resolves to its real address, which a rule's Network CIDRs must hold. Docker's `172.17.0.0/16`, IPv6 and `ping` never take the tunnel |
+
+An instance's lines go with it when it is replaced; after that, only whatever
+collects your logs still has them.
 
 ### Jobs lose connections mid-run, or run slowly
 
